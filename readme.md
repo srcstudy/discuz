@@ -1,6 +1,3 @@
-<p align="center"><img src="https://www.discuz.net/static/image/common/logo.svg"></p>
-
-
 ## 关于 Discuz! Q
 
 **[Discuz Q 官方](https://discuz.chat)**
