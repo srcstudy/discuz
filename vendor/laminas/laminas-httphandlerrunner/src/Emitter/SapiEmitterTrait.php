@@ -32,7 +32,7 @@ trait SapiEmitterTrait
      */
     private function assertNoPreviousOutput()
     {
-		return;
+		//return;
         if (headers_sent()) {
             throw EmitterException::forHeadersSent();
         }
