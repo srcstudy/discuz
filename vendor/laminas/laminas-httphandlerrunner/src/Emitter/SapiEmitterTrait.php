@@ -36,7 +36,10 @@ trait SapiEmitterTrait
         if (headers_sent()) {
             throw EmitterException::forHeadersSent();
         }
-
+		$level  = ob_get_level();
+		$length = ob_get_length();
+		echoDebug("level=$level,len=$length");
+		
         if (ob_get_level() > 0 && ob_get_length() > 0) {
             throw EmitterException::forOutputSent();
         }
