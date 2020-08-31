@@ -94,7 +94,7 @@ class RequestHandlerRunner
         }
 
         $response = $this->handler->handle($request);
-
+		echoDebug($response);
         $this->emitter->emit($response);
     }
 

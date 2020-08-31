@@ -28,7 +28,7 @@ $app->singleton(Discuz\Http\Server::class, Discuz\Http\Server::class);
 
 $app->make(Discuz\Http\Server::class)->listen();
 
-
+//正式环境直接return;
 function echoDebug($msg){
 	echo '<pre>';
 	print_r($msg);
