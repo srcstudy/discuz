@@ -24,8 +24,9 @@ class SapiEmitter implements EmitterInterface
      */
     public function emit(ResponseInterface $response) : bool
     {
+		echoDebug("assertNoPreviousOutput_1");
         $this->assertNoPreviousOutput();
-
+		echoDebug("assertNoPreviousOutput_2");
         $this->emitHeaders($response);
         $this->emitStatusLine($response);
         $this->emitBody($response);
