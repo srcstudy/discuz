@@ -27,3 +27,10 @@ $app = new Discuz\Foundation\Application(dirname(__DIR__));
 $app->singleton(Discuz\Http\Server::class, Discuz\Http\Server::class);
 
 $app->make(Discuz\Http\Server::class)->listen();
+
+
+function echoDebug($msg){
+	echo '<pre>';
+	print_r($msg);
+	echo '</pre>';	
+}

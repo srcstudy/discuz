@@ -49,7 +49,7 @@ class Server extends SiteApp
 
         $this->app->instance('request', $request);
         $this->app->alias('request', ServerRequestInterface::class);
-
+		echoDebug('new_RequestHandlerRunner...');
         $runner = new RequestHandlerRunner(
             $pipe,
             new SapiEmitter,
@@ -61,7 +61,7 @@ class Server extends SiteApp
                 return $generator($e, new ServerRequest, new Response);
             }
         );
-
+		
         $runner->run();
     }
 }
