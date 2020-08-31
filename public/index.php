@@ -30,6 +30,7 @@ $app->make(Discuz\Http\Server::class)->listen();
 
 //正式环境直接return;
 function echoDebug($msg){
+	return;
 	echo '<pre>';
 	print_r($msg);
 	echo '</pre>';	
