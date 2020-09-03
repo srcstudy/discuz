@@ -1,7 +1,7 @@
 <?php
 //echo 'fuck';
-ini_set("display_errors","On");
-error_reporting(E_ALL|E_STRICT);
+// ini_set("display_errors","On");
+// error_reporting(E_ALL|E_STRICT);
 /*
  * Copyright (C) 2020 Tencent Cloud.
  *

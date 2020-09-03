@@ -33,19 +33,19 @@ trait SapiEmitterTrait
     private function assertNoPreviousOutput()
     {
 		//return;
-        //if (headers_sent()) {
-         //   throw EmitterException::forHeadersSent();
-       // }
+        if (headers_sent()) {
+           throw EmitterException::forHeadersSent();
+       }
 		
-		if (headers_sent($file, $line)) {
-			echoDebug("Headers sent in $file on line $line");
-            throw EmitterException::forHeadersSent();
-        }
+		// if (headers_sent($file, $line)) {
+			// echoDebug("Headers sent in $file on line $line");
+            // throw EmitterException::forHeadersSent();
+        // }
 		
 		
-		$level  = ob_get_level(); //返回输出缓冲机制的嵌套级别
-		$length = ob_get_length();//返回输出缓冲区内容的长度
-		echoDebug("level=$level,len=$length");
+		// $level  = ob_get_level(); //返回输出缓冲机制的嵌套级别
+		// $length = ob_get_length();//返回输出缓冲区内容的长度
+		// echoDebug("level=$level,len=$length");
 		
         if (ob_get_level() > 0 && ob_get_length() > 0) {
             throw EmitterException::forOutputSent();
