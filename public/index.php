@@ -30,8 +30,17 @@ $app->make(Discuz\Http\Server::class)->listen();
 
 //正式环境直接return;
 function echoDebug($msg){
-	//return;
+	logf($msg);
+	return;
 	echo '<pre>';
 	print_r($msg);
 	echo '</pre>';	
+}
+
+function logf($msg){
+	$fp = fopen( __DIR__ ."log.txt", "a+");//读写方式打开，将文件指针指向文件末尾。如果文件不存在则尝试创建之。
+	$time = date('Y-m-d H:i:s'); 
+	fwrite($fp, $time.'  '.$data."\r\n");//记得a+w
+	fclose($fp);	
+	
 }
