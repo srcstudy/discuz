@@ -76,8 +76,9 @@ class InviteBind
                 $invite->status = 2;
                 $invite->save();
                 // 同步用户组
-                $defaultGroup = Group::find($invite->group_id);
-                $event->user->groups()->sync($defaultGroup->id);
+                $event->user->groups()->sync(
+                    Group::query()->find($invite->group_id)
+                );
 
                 // 修改付费状态
                 if ($this->settings->get('site_mode') == 'pay') {
@@ -86,7 +87,7 @@ class InviteBind
                 }
             }
         } else {
-            $fromUserId = $this->InviteRepository->decryptCode($code); // 邀请人
+            $fromUserId = $code; // 邀请人userID
             $toUserId = $event->user->id; // 受邀人
 
             // 保持数据一致性
@@ -118,7 +119,9 @@ class InviteBind
                 $toUser->refreshUserFans();
                 $toUser->save();
 
-                $bossGroup = $fromUser->groups->first();
+                // 多个用户组时 取主用户组(null值无限期)
+                $bossGroup = $fromUser->groups()->whereNull('group_user.expiration_time')->first();
+
                 // 建立上下级关系
                 UserDistribution::query()->create([
                     'pid' => $fromUserId,
@@ -132,7 +135,6 @@ class InviteBind
                 $this->db->commit();
             } catch (Exception $e) {
                 $this->db->rollback();
-                throw new Exception($e->getMessage());
             }
         }
 

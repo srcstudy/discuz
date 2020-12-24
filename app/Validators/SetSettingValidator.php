@@ -30,6 +30,7 @@ use App\Rules\Settings\QcloudTaskflowGifVerify;
 use App\Rules\Settings\QcloudVodCoverTemplateVerify;
 use App\Rules\Settings\QcloudVodTranscodeVerify;
 use App\Rules\Settings\QcloudVodVerify;
+use App\Rules\Settings\SiteOnlookerPrice;
 use App\Rules\Settings\SupportExt;
 use Discuz\Contracts\Setting\SettingsRepository;
 use Discuz\Foundation\AbstractValidator;
@@ -73,7 +74,7 @@ class SetSettingValidator extends AbstractValidator
             'qcloud_cms_text' => Arr::has($this->data, 'qcloud_cms_text') ? [new QcloudMasterSwitch()] : [],
             'qcloud_cos' => Arr::has($this->data, 'qcloud_cos') ? [new QcloudMasterSwitch()] : [],
             'qcloud_captcha' => Arr::has($this->data, 'qcloud_captcha') ? [new QcloudMasterSwitch()] : [],
-            'site_price' => 'required_if:site_mode,pay|nullable|not_in:0',
+            'site_price' => 'required_if:site_mode,pay|nullable|gte:0.1',
         ];
 
         // 腾讯云验证码特殊处理
@@ -88,12 +89,8 @@ class SetSettingValidator extends AbstractValidator
             ];
         }
 
-        // 开启视频验证
-        if (Arr::has($this->data, 'qcloud_vod') && $this->data['qcloud_vod'] == 1) {
-            $rules['qcloud_vod'] = ['filled',
-                new QcloudVodTranscodeVerify($this->settings->get('qcloud_vod_transcode', 'qcloud')),
-                new QcloudVodVerify($this->settings->get('qcloud_vod_sub_app_id', 'qcloud'))];
-        }
+        // 云点播检验
+        $this->checkQcloudVod($rules);
 
         // 开启短信验证
         if (Arr::has($this->data, 'qcloud_sms_app_id')) {
@@ -103,21 +100,42 @@ class SetSettingValidator extends AbstractValidator
             ];
         }
 
-        if (Arr::has($this->data, 'qcloud_vod_sub_app_id')) {
-            $rules['qcloud_vod_sub_app_id'] = [new QcloudVodVerify()];
-        }
-        if (Arr::has($this->data, 'qcloud_vod_transcode')) {
-            $rules['qcloud_vod_transcode'] = [new QcloudVodTranscodeVerify()];
-        }
-        if (Arr::has($this->data, 'qcloud_vod_cover_template')) {
-            $rules['qcloud_vod_cover_template'] = [new QcloudVodCoverTemplateVerify()];
-        }
-
-        if (Arr::has($this->data, 'qcloud_vod_taskflow_gif')) {
-            $rules['qcloud_vod_taskflow_gif'] = [new QcloudTaskflowGifVerify()];
+        if (Arr::has($this->data, 'site_onlooker_price')) {
+            $rules['site_onlooker_price'] = [new SiteOnlookerPrice()];
         }
 
         return $rules;
+    }
+
+    /**
+     * 云点播验证
+     *
+     * @param $rules
+     */
+    public function checkQcloudVod(&$rules)
+    {
+        if (Arr::has($this->data, 'qcloud_vod_sub_app_id')) {
+            $rules['qcloud_vod_sub_app_id'] = [new QcloudVodVerify()];
+        }
+
+        // 开启视频验证
+        if (Arr::has($this->data, 'qcloud_vod') && $this->data['qcloud_vod'] == 1) {
+            $rules['qcloud_vod'] = [
+                'filled',
+                new QcloudVodTranscodeVerify($this->settings->get('qcloud_vod_transcode', 'qcloud'), $this->faker('qcloud_vod_sub_app_id')),
+                new QcloudVodVerify($this->settings->get('qcloud_vod_sub_app_id', 'qcloud')),
+            ];
+        }
+
+        if (Arr::has($this->data, 'qcloud_vod_transcode')) {
+            $rules['qcloud_vod_transcode'] = [new QcloudVodTranscodeVerify('', $this->faker('qcloud_vod_sub_app_id'))];
+        }
+        if (Arr::has($this->data, 'qcloud_vod_cover_template')) {
+            $rules['qcloud_vod_cover_template'] = [new QcloudVodCoverTemplateVerify($this->faker('qcloud_vod_sub_app_id'))];
+        }
+        if (Arr::has($this->data, 'qcloud_vod_taskflow_gif')) {
+            $rules['qcloud_vod_taskflow_gif'] = [new QcloudTaskflowGifVerify($this->faker('qcloud_vod_sub_app_id'))];
+        }
     }
 
     /**

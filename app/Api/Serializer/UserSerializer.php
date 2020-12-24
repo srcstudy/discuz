@@ -62,8 +62,6 @@ class UserSerializer extends AbstractSerializer
 
         $canEdit = $gate->allows('edit', $model);
 
-        $settings = app()->make(SettingsRepository::class);
-
         $attributes = [
             'id'                => (int) $model->id,
             'username'          => $model->username,
@@ -73,6 +71,7 @@ class UserSerializer extends AbstractSerializer
             'followCount'       => (int) $model->follow_count,
             'fansCount'         => (int) $model->fans_count,
             'likedCount'        => (int) $model->liked_count,
+            'questionCount'     => (int) $model->question_count,
             'signature'         => $model->signature,
             'usernameBout'      => (int) $model->username_bout,
             'status'            => $model->status,
@@ -86,7 +85,8 @@ class UserSerializer extends AbstractSerializer
             'showGroups'        => $gate->allows('showGroups', $model),     // 是否显示用户组
             'registerReason'    => $model->register_reason,                 // 注册原因
             'banReason'         => '',                                      // 禁用原因
-            'denyStatus'        => (bool)$model->denyStatus,
+            'denyStatus'        => (bool) $model->denyStatus,
+            'canBeAsked'        => $model->id !== $this->actor->id && $model->can('canBeAsked'), // 是否允许被提问
         ];
 
         $whitelist = [
@@ -133,8 +133,11 @@ class UserSerializer extends AbstractSerializer
                 'canEditUsername' => true,  // 可否更改用户名
             ];
         } else {
+            /** @var SettingsRepository $settings */
+            $settings = app(SettingsRepository::class);
+
             $attributes += [
-                'canEditUsername' => $model->username_bout >= $settings->get('username_bout', 'default', 1) ? false : true,
+                'canEditUsername' => $model->username_bout < $settings->get('username_bout', 'default', 1),
             ];
         }
 

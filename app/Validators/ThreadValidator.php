@@ -29,9 +29,14 @@ class ThreadValidator extends AbstractValidator
     protected function getRules()
     {
         return [
-            'title' => 'required|max:80',
+            'title' => 'required|max:150',
             'location' => 'max:100',
             'price' => [
+                'sometimes',
+                'regex:/^(0|[1-9]\d{0,5})(\.\d{1,2})?$/',   // decimal 10,2
+            ],
+            'free_words' => 'required_with:price|numeric|in:0,0.1,0.3,0.5,0.7,1',
+            'attachment_price' => [
                 'sometimes',
                 'regex:/^(0|[1-9]\d{0,5})(\.\d{1,2})?$/',   // decimal 10,2
             ],

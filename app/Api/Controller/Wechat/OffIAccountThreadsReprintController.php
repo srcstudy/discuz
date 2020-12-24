@@ -18,6 +18,7 @@
 
 namespace App\Api\Controller\Wechat;
 
+use App\Models\Attachment;
 use App\Repositories\ThreadRepository;
 use App\Settings\ForumSettingField;
 use Carbon\Carbon;
@@ -225,22 +226,22 @@ class OffIAccountThreadsReprintController implements RequestHandlerInterface
     /**
      * 处理单个图片模型 - 上传图片素材前
      *
-     * @param $imageModel
+     * @param Attachment $model
      * @param array $callback
      */
-    public function processingPicture($imageModel, $callback = [])
+    public function processingPicture(Attachment $model, $callback = [])
     {
-        $pathUrl = Str::finish($imageModel->file_path, '/') . $imageModel->attachment;
-        if ($imageModel->is_remote) {
-            $url = $this->filesystem->disk('attachment_cos')->temporaryUrl($pathUrl, Carbon::now()->addMinutes(5));
+        if ($model->is_remote) {
+            $url = $this->settings->get('qcloud_cos_sign_url', 'qcloud', true)
+                ? $this->filesystem->disk('attachment_cos')->temporaryUrl($model->full_path, Carbon::now()->addDay())
+                : $this->filesystem->disk('attachment_cos')->url($model->full_path);
         } else {
-            $url = $this->filesystem->disk('attachment')->url($pathUrl);
+            $url = $this->filesystem->disk('attachment')->url($model->full_path);
         }
-        $fileName = $imageModel->file_name;
 
         $callback([
             'url' => $url,
-            'file_name' => $fileName,
+            'file_name' => $model->file_name,
         ]);
     }
 
@@ -357,7 +358,7 @@ class OffIAccountThreadsReprintController implements RequestHandlerInterface
      */
     public function videoFormatter($threadId, $assetUrl)
     {
-        $toUrl = $this->url->to('/pages/topic/index?id=' . $threadId);
+        $toUrl = $this->url->to('/topic/index?id=' . $threadId);
 
         $str = '<p style="text-align: center;">
                     <a target="_blank" href="%s" tab="outerlink" data-linktype="2">

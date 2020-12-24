@@ -19,6 +19,7 @@
 namespace Discuz\Api\Controller;
 
 use App\Formatter\BaseFormatter;
+use Discuz\Api\Events\WillSerializeData;
 use Discuz\Http\DiscuzResponseFactory;
 use Illuminate\Contracts\Container\Container;
 use Psr\Http\Message\ResponseInterface;
@@ -54,11 +55,18 @@ abstract class AbstractSerializeController implements RequestHandlerInterface
     public $optionalInclude = [];
 
     /**
+     * The relationships that are must to included.
+     *
+     * @var array
+     */
+    public $mustInclude = [];
+
+    /**
      * The maximum number of records that can be requested.
      *
      * @var int
      */
-    public $maxLimit = 50;
+    public $maxLimit = 200;
 
     /**
      * The number of records included by default.
@@ -99,6 +107,10 @@ abstract class AbstractSerializeController implements RequestHandlerInterface
 
         $data = $this->data($request, $document);
 
+        static::$container->make('events')->dispatch(
+            new WillSerializeData($this, $data, $request, $document)
+        );
+
         $serializer = static::$container->make($this->serializer);
         $serializer->setRequest($request);
 
@@ -135,9 +147,11 @@ abstract class AbstractSerializeController implements RequestHandlerInterface
      */
     protected function extractInclude(ServerRequestInterface $request)
     {
-        $available = array_merge($this->include, $this->optionalInclude);
+        $available = array_merge($this->include, $this->optionalInclude, $this->mustInclude);
 
-        return $this->buildParameters($request)->getInclude($available) ?: $this->include;
+        $include = $this->buildParameters($request)->getInclude($available) ?: array_merge($this->include, $this->mustInclude);
+
+        return array_unique(array_merge($include, $this->mustInclude));
     }
 
     /**

@@ -44,16 +44,22 @@ class TokenSerializer extends AbstractSerializer
      */
     protected function getDefaultAttributes($model)
     {
-        return [
+        $build = [
             'token_type' => $model->token_type,
             'expires_in' => $model->expires_in,
             'access_token' => $model->access_token,
             'refresh_token' => $model->refresh_token,
         ];
+
+        return $build;
     }
 
     public function getId($model)
     {
+        if (property_exists($model, 'pc_login')) {
+            return $model->user_id;
+        }
+
         return static::$user->id;
     }
 

@@ -44,9 +44,13 @@ class QcloudVodCoverTemplateVerify extends BaseQcloud
 
     private $randStr;
 
-    public function __construct()
+    private $qcloudVodSubAppId;
+
+    public function __construct($qcloudVodSubAppId)
     {
         parent::__construct();
+
+        $this->qcloudVodSubAppId = $qcloudVodSubAppId;
     }
 
     /**
@@ -58,9 +62,9 @@ class QcloudVodCoverTemplateVerify extends BaseQcloud
     public function passes($attribute, $value)
     {
         try {
-            $res = $this->describeSnapshotByTimeOffsetTemplates($value);
+            $res = $this->describeSnapshotByTimeOffsetTemplates($value, $this->qcloudVodSubAppId);
         } catch (TencentCloudSDKException $e) {
-            throw new TranslatorException('tencent_vod_error', [$e->getCode()]);
+            throw new TranslatorException('tencent_vod_error', [$e->getErrorCode()]);
         }
         if ($res->TotalCount == 0) {
             throw new TencentCloudSDKException('qcloud_vod_cover_template_not_found');

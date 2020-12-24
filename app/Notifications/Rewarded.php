@@ -2,13 +2,10 @@
 
 /**
  * Copyright (C) 2020 Tencent Cloud.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
  *   http://www.apache.org/licenses/LICENSE-2.0
- *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,131 +15,139 @@
 
 namespace App\Notifications;
 
-use App\Models\Order;
-use App\Models\Thread;
-use Illuminate\Bus\Queueable;
+use App\Models\User;
+use App\Notifications\Messages\Database\RewardedMessage;
+use App\Notifications\Messages\Wechat\ExpiredWechatMessage;
+use App\Notifications\Messages\Wechat\RewardedScaleWechatMessage;
+use App\Notifications\Messages\Wechat\RewardedWechatMessage;
+use Discuz\Notifications\Messages\SimpleMessage;
+use Discuz\Notifications\NotificationManager;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 /**
  * 支付通知
- * (包含: 打赏帖子/支付付费贴)
  *
- * Class Rewarded
  * @package App\Notifications
  */
-class Rewarded extends System
+class Rewarded extends AbstractNotification
 {
-    use Queueable;
+    public $user;
 
-    public $order;
+    public $model;
 
-    public $actor;
+    public $data;
 
-    public $channel;
+    protected $message;
 
-    /**
-     * @var bool 是否是分成通知类
-     */
-    public $isScaleClass;
+    public $tplId = [];
 
     /**
-     * Rewarded constructor.
-     *
-     * @param Order $order
-     * @param $actor
-     * @param string $messageClass
-     * @param array $build
+     * @var Collection
      */
-    public function __construct(Order $order, $actor, $messageClass = '', $build = [])
+    protected $messageRelationship;
+
+    public function __construct($message, User $user, Model $model, $data = [])
     {
-        $this->setChannelName($messageClass);
+        $this->message = app($message);
 
-        $this->order = $order;
-        $this->actor = $actor;
+        $this->user = $user;
+        $this->model = $model;
+        $this->data = $data;
 
-        parent::__construct($messageClass, $build);
+        /**
+         * 初始化要发送的模板中，对应的 tplId
+         */
+        $this->initNoticeMessage();
+
+        $this->setTemplate();
     }
 
     /**
-     * 数据库驱动通知
+     * 设置所有开启中的，要发送的模板
+     * 查询到数据集合后，存放静态区域
+     */
+    protected function setTemplate()
+    {
+        self::getTemplate($this->tplId);
+    }
+
+    /**
+     * Get the notification's delivery channels.
      *
-     * @param $notifiable
+     * @param mixed $notifiable
      * @return array
      */
+    public function via($notifiable)
+    {
+        // 获取已开启的通知频道
+        return $this->getNotificationChannels();
+    }
+
+    public function getTplModel($type)
+    {
+        return self::$tplData->where('id', $this->tplId[$type])->first();
+    }
+
+    /**
+     * @param string $type
+     * @return SimpleMessage
+     */
+    public function getMessage(string $type)
+    {
+        return $this->messageRelationship->get($type);
+    }
+
     public function toDatabase($notifiable)
     {
+        $message = $this->getMessage('database');
+        $message->setData($this->getTplModel('database'), $this->user, $this->model, $this->data);
+
+        return (new NotificationManager)->driver('database')->setNotification($message)->build();
+    }
+
+    public function toWechat($notifiable)
+    {
+        $message = $this->getMessage('wechat');
+        $message->setData($this->getTplModel('wechat'), $this->user, $this->model, $this->data);
+
+        return (new NotificationManager)->driver('wechat')->setNotification($message)->build();
+    }
+
+    protected function initNoticeMessage()
+    {
         /**
-         * 判断是否是分成通知，上级金额/自己收款金额 不同
+         * init database message
          */
-        if ($this->isScaleClass) {
-            // 分成通知数据
-            $build = [
-                'user_id' => $this->order->user->id,
-                'order_id' => $this->order->id,
-                'thread_id' => 0,       // 无主题关联
-                'thread_username' => 0,
-                'thread_title' => 0,
-                'content' => '',
-                'thread_created_at' => '',
-                'amount' => $this->order->calculateAuthorAmount(), // 获取上级的实际分成金额数
-                'order_type' => $this->order->type,  // 1：注册，2：打赏，3：付费主题，4：付费用户组
-            ];
-        } else {
-            $build = [
-                'user_id' => $this->order->user->id,  // 付款人ID
-                'order_id' => $this->order->id,
-                'thread_id' => $this->order->thread->id,   // 必传
-                'thread_username' => $this->order->thread->user->username, // 必传主题用户名
-                'thread_title' => $this->order->thread->title,
-                'content' => '',  // 兼容原数据
-                'thread_created_at' => $this->order->thread->formatDate('created_at'),
-                'amount' => $this->order->calculateAuthorAmount(true), // 支付金额 - 分成金额 (string精度问题)
-                'order_type' => $this->order->type,  // 1：注册，2：打赏，3：付费主题，4：付费用户组
-            ];
+        $this->messageRelationship = collect();
+        $this->messageRelationship['wechat'] = $this->message;
 
-            $this->build($build);
+        // set public database message relationship
+        $this->messageRelationship['database'] = app(RewardedMessage::class);
+
+        /**
+         * set tpl id
+         */
+        if ($this->message instanceof RewardedWechatMessage) {
+            // 内容支付通知
+            $this->tplId['database'] = 27;
+            $this->data = array_merge($this->data, ['notice_types_of' => 1]); // 收入通知
         }
-
-        // 是否是分成金额
-        $build = array_merge($build, ['isScale' => $this->order->isScale()]);
-
-        return $build;
-    }
-
-    /**
-     * @param $build
-     */
-    public function build(&$build)
-    {
-        $content = $this->order->thread->getContentByType(Thread::CONTENT_LENGTH);
-
-        $build['content'] = $content;
-    }
-
-    /**
-     * 设置驱动名称&属性
-     *
-     * @param $strClass
-     */
-    protected function setChannelName($strClass)
-    {
-        switch ($strClass) {
-            case 'App\MessageTemplate\Wechat\WechatRewardedMessage':
-                $this->channel = 'wechat';
-                $this->isScaleClass = false;
-                break;
-            case 'App\MessageTemplate\Wechat\WechatRewardedScaleMessage':
-                $this->channel = 'wechat';
-                $this->isScaleClass = true;
-                break;
-            case 'App\MessageTemplate\RewardedMessage':
-            default:
-                $this->channel = 'database';
-                $this->isScaleClass = false;
-                break;
-            case 'App\MessageTemplate\RewardedScaleMessage':
-                $this->channel = 'database';
-                $this->isScaleClass = true;
-                break;
+        if ($this->message instanceof RewardedScaleWechatMessage) {
+            // 内容支付分成通知
+            $this->tplId['database'] = 37;
+            // 分成通知
+            $this->data = array_merge($this->data, [
+                'notice_types_of' => 2,
+                'is_scale_class' => true, // 是否是分成通知类
+            ]);
         }
+        if ($this->message instanceof ExpiredWechatMessage) {
+            // 打赏过期通知
+            $this->tplId['database'] = 43;
+            $this->data = array_merge($this->data, ['notice_types_of' => 3]); // 过期通知
+        }
+        // 31 内容支付通知  38 内容支付分成通知  44 过期通知
+        $this->tplId['wechat'] = $this->messageRelationship['wechat']->tplId;
     }
 }

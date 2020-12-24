@@ -22,12 +22,12 @@ use App\Models\User;
 use App\Passport\Repositories\AccessTokenRepository;
 use Discuz\Auth\Guest;
 use Illuminate\Support\Arr;
+use League\OAuth2\Server\CryptKey;
 use League\OAuth2\Server\ResourceServer;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use League\OAuth2\Server\CryptKey;
 
 class AuthenticateWithHeader implements MiddlewareInterface
 {
@@ -41,7 +41,7 @@ class AuthenticateWithHeader implements MiddlewareInterface
     {
         $headerLine = $request->getHeaderLine('authorization');
 
-        // 允许 get 携带 Token
+        // 允许 get、cookie 携带 Token
         if (! $headerLine) {
             $headerLine = Arr::get($request->getQueryParams(), 'token');
 

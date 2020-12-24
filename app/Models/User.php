@@ -19,7 +19,9 @@
 namespace App\Models;
 
 use App\Traits\Notifiable;
+use Carbon\Carbon;
 use Discuz\Auth\Guest;
+use Discuz\Contracts\Setting\SettingsRepository;
 use Discuz\Database\ScopeVisibilityTrait;
 use Discuz\Foundation\EventGeneratorTrait;
 use Discuz\Http\UrlGenerator;
@@ -33,7 +35,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -57,6 +58,7 @@ use Illuminate\Support\Str;
  * @property int $follow_count
  * @property int $fans_count
  * @property int $liked_count
+ * @property int $question_count
  * @property Carbon $login_at
  * @property Carbon $avatar_at
  * @property Carbon $joined_at
@@ -65,12 +67,13 @@ use Illuminate\Support\Str;
  * @property Carbon $updated_at
  * @property string $identity
  * @property string $realname
+ * @property bool $denyStatus
  * @property Collection $groups
  * @property userFollow $follow
  * @property UserWallet $userWallet
  * @property UserWechat $wechat
  * @property UserDistribution $userDistribution
- * @package App\Models
+ * @property User $deny
  * @method truncate()
  * @method hasAvatar()
  */
@@ -161,6 +164,10 @@ class User extends Model
         $user->joined_at = Carbon::now();
         $user->login_at = Carbon::now();
         $user->setPasswordAttribute($user->password);
+
+        // 将名字中的空白字符替换为空
+        $user->username = preg_replace('/\s/ui', '', $user->username);
+
         return $user;
     }
 
@@ -289,6 +296,18 @@ class User extends Model
     }
 
     /**
+     * @return $this
+     */
+    public function resetGroup()
+    {
+        $this->groups()->sync(
+            Group::query()->where('default', true)->first() ?? Group::MEMBER_ID
+        );
+
+        return $this;
+    }
+
+    /**
      * Check if a given password matches the user's password.
      *
      * @param string $password
@@ -338,21 +357,26 @@ class User extends Model
      */
     public function getAvatarAttribute($value)
     {
-        if ($value) {
-            if (strpos($value, '://') === false) {
-                $value = app(UrlGenerator::class)->to('/storage/avatars/' . $value)
-                    . '?' . \Carbon\Carbon::parse($this->avatar_at)->timestamp;
-            } else {
-                $value = app(Filesystem::class)
-                    ->disk('avatar_cos')
-                    ->temporaryUrl(
-                        'public/avatar/' . Str::after($value, '://'),
-                        \Carbon\Carbon::now()->addHour()
-                    );
-            }
+        if (empty($value)) {
+            return $value;
         }
 
-        return $value;
+        if (strpos($value, '://') === false) {
+            return app(UrlGenerator::class)->to('/storage/avatars/' . $value)
+                . '?' . Carbon::parse($this->avatar_at)->timestamp;
+        }
+
+        /** @var SettingsRepository $settings */
+        $settings = app(SettingsRepository::class);
+
+        $path = 'public/avatar/' . Str::after($value, '://');
+
+        if ($settings->get('qcloud_cos_sign_url', 'qcloud', true)) {
+            return app(Filesystem::class)->disk('avatar_cos')->temporaryUrl($path, Carbon::now()->addDay());
+        } else {
+            return app(Filesystem::class)->disk('avatar_cos')->url($path)
+                . '?' . Carbon::parse($this->avatar_at)->timestamp;
+        }
     }
 
     public function getMobileAttribute($value)
@@ -385,7 +409,29 @@ class User extends Model
     {
         $this->thread_count = $this->threads()
             ->where('is_approved', Thread::APPROVED)
+            ->where('type', '<>', Thread::TYPE_OF_QUESTION)
             ->whereNull('deleted_at')
+            ->count();
+
+        return $this;
+    }
+
+    /**
+     * 刷新用户问答数，包括提问与回答
+     *
+     * @return $this
+     */
+    public function refreshQuestionCount()
+    {
+        $this->question_count = Thread::query()
+            ->join('questions', 'threads.id', '=', 'questions.thread_id')
+            ->where('threads.type', Thread::TYPE_OF_QUESTION)
+            ->where('threads.is_approved', Thread::APPROVED)
+            ->where('threads.is_anonymous', false)
+            ->whereNull('threads.deleted_at')
+            ->where(function (Builder $query) {
+                $query->where('threads.user_id', $this->id)->orWhere('questions.be_user_id', $this->id);
+            })
             ->count();
 
         return $this;
@@ -586,7 +632,9 @@ class User extends Model
         return $this->belongsToMany(Thread::class)
             ->as('favoriteState')
             ->withPivot('created_at')
-            ->whereNotNull('threads.user_id');
+            ->whereNull('threads.deleted_at')
+            ->whereNotNull('threads.user_id')
+            ->where('threads.is_approved', Thread::APPROVED);
     }
 
     /**

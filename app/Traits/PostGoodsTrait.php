@@ -2,13 +2,10 @@
 
 /**
  * Copyright (C) 2020 Tencent Cloud.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
  *   http://www.apache.org/licenses/LICENSE-2.0
- *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,11 +17,12 @@ namespace App\Traits;
 
 use App\Exceptions\TranslatorException;
 use App\Models\PostGoods;
+use Exception;
 
 /**
  * 获取网址里的[商品信息]
- *
  * Trait PostGoodsTrait
+ *
  * @package App\Traits
  */
 trait PostGoodsTrait
@@ -83,7 +81,6 @@ trait PostGoodsTrait
                 break;
             default:
                 throw new TranslatorException('post_goods_not_found_regex');
-                break;
         }
     }
 
@@ -109,7 +106,7 @@ trait PostGoodsTrait
         $this->getAlibabaGoodsId();
 
         // get title
-        $titleRegex = '/<h3\s*class="tb-main-title"\s*data-title="(?<title>.+)">/i';
+        $titleRegex = '/<h3\s*class="tb-main-title\s*"\s*data-title="(?<title>.+)"\s*>/i';
         if (preg_match($titleRegex, $this->html, $matchTitle)) {
             $this->goodsInfo['title'] = mb_convert_encoding($matchTitle['title'], 'UTF-8', 'GBK');
         }
@@ -121,7 +118,7 @@ trait PostGoodsTrait
         }
 
         // get price
-        $priceRegex = '/<em\s*class="tb-rmb-num">(?<price>[\d\.]{1,12})<\/em>/i';
+        $priceRegex = '/<em\s*class="tb-rmb-num\s*">(?<price>.+)<\/em>/i';
         if (preg_match($priceRegex, $this->html, $matchPrice)) {
             $this->goodsInfo['price'] = $matchPrice['price'];
         }
@@ -140,7 +137,7 @@ trait PostGoodsTrait
         }
 
         // get price
-        $tMallPrice = '/defaultItemPrice":"(?<price>[\d\.]{1,12})/i';
+        $tMallPrice = '/defaultItemPrice":"(?<price>[\d\.\s-]{1,30})"(,?)/i';
         if (preg_match($tMallPrice, $this->html, $matchPrice)) {
             $this->goodsInfo['price'] = $matchPrice['price'];
         }
@@ -155,30 +152,39 @@ trait PostGoodsTrait
         }
 
         // get title
-        $JDRegex = '/<div\s*class="fn_text_wrap"\s*id="itemName">(?<title>.+)<\/div>/i';
+        $JDRegex = '/<div\s*class="fn_text_wrap\s*"\s*id="itemName"\s*>(?<title>.+)<\/div>/i';
         if (preg_match($JDRegex, $this->html, $matchTitle)) {
             $this->goodsInfo['title'] = $matchTitle['title'];
         }
 
         // get src
-        $srcRegex = '/<li\s*id="firstImgLi"\s*data-ul-child="child">\s*<img\s*id="firstImg"\s*onload=".*src="(?<src>.+\.[a-z]+)"/i';
+        $srcRegex = '/<img\s*alt="\s*商品图\s*"\s*src="(?<src>.+)"\s* class/i';
         if (preg_match($srcRegex, $this->html, $matchSrc)) {
             $this->goodsInfo['src'] = trim($matchSrc['src'], '/');
         }
 
         // get price
-        $priceRegex = '/<em>(?<price>\d+)<\/em>\s*<span\s*class="price_decimals">(?<price_point>.+)<\/span>/';
+        $priceRegex = '/<em>(?<price>\d+)<\/em>\s*<span\s*class="price_decimals\s*"\s*>(?<price_point>.+)<\/span>/';
         if (preg_match($priceRegex, $this->html, $matchPrice)) {
             $this->goodsInfo['price'] = $matchPrice['price'] . $matchPrice['price_point'];
         }
     }
 
+    /**
+     * 拼多多检测登陆机制，目前无法抓取商品内容
+     */
     protected function pdd()
     {
         // get address platformId
         $idRegex = '/goods_id=(?<platform_id>\d+)/';
         if (preg_match($idRegex, $this->address, $matchAddress)) {
             $this->goodsInfo['platform_id'] = $matchAddress['platform_id'];
+        }
+
+        // get src
+        $srcRegex = '/<meta\s*property="\s*og:image\s*"\s*content="(?<src>.+)\s*"\s*>/i';
+        if (preg_match($srcRegex, $this->html, $matchSrc)) {
+            $this->goodsInfo['src'] = $matchSrc['src']; // 拼多多默认Logo
         }
     }
 
@@ -208,22 +214,30 @@ trait PostGoodsTrait
         }
     }
 
+    /**
+     * @throws Exception
+     */
     protected function wirelessShare()
     {
         // 匹配js跳转地址
-        $regex = '/(?<address>(https|http):[\w\/\.\?\=\&\-]+)/i';
+        $regex = "/(?<address>(https|http):.+)'(;?)/i";
         if (preg_match($regex, $this->html, $match)) {
-            $response = $this->httpClient->request('GET', $match['address'], [
-                'allow_redirects' => [
-                    'max' => 100,
-                    'track_redirects' => true
-                ]
-            ]);
+            try {
+                $response = $this->httpClient->request('GET', $match['address'], [
+                    'allow_redirects' => [
+                        'max' => 100,
+                        'track_redirects' => true,
+                    ],
+                ]);
+            } catch (Exception $e) {
+                // 触发淘宝频繁请求机制
+                throw new Exception(trans('post.post_goods_frequently_fail'));
+            }
 
             // 获取最终的重定向真实域名地址
             $redirects = $response->getHeader('X-Guzzle-Redirect-History');
-            if (!empty($redirects)) {
-                $match['address'] = array_shift($redirects);
+            if (! empty($redirects)) {
+                $match['address'] = end($redirects);
             }
 
             // 重新覆盖

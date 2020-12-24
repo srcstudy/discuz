@@ -22,7 +22,9 @@ use App\Models\Attachment;
 use App\Traits\HasPaidContent;
 use Carbon\Carbon;
 use Discuz\Api\Serializer\AbstractSerializer;
+use Discuz\Contracts\Setting\SettingsRepository;
 use Illuminate\Contracts\Filesystem\Factory as Filesystem;
+use Illuminate\Contracts\Routing\UrlGenerator;
 use Illuminate\Support\Str;
 use Tobscure\JsonApi\Relationship;
 
@@ -41,11 +43,25 @@ class AttachmentSerializer extends AbstractSerializer
     protected $filesystem;
 
     /**
-     * @param Filesystem $filesystem
+     * @var SettingsRepository
      */
-    public function __construct(Filesystem $filesystem)
+    protected $settings;
+
+    /**
+     * @var UrlGenerator
+     */
+    protected $url;
+
+    /**
+     * @param Filesystem $filesystem
+     * @param SettingsRepository $settings
+     * @param UrlGenerator $url
+     */
+    public function __construct(Filesystem $filesystem, SettingsRepository $settings, UrlGenerator $url)
     {
         $this->filesystem = $filesystem;
+        $this->settings = $settings;
+        $this->url = $url;
     }
 
     /**
@@ -57,15 +73,13 @@ class AttachmentSerializer extends AbstractSerializer
     {
         $this->paidContent($model);
 
-        $path = Str::finish($model->file_path, '/') . $model->attachment;
-
         if ($model->is_remote) {
-            $url = $this->filesystem->disk('attachment_cos')->temporaryUrl($path, Carbon::now()->addMinutes(5));
+            $url = $this->settings->get('qcloud_cos_sign_url', 'qcloud', true)
+                ? $this->filesystem->disk('attachment_cos')->temporaryUrl($model->full_path, Carbon::now()->addDay())
+                : $this->filesystem->disk('attachment_cos')->url($model->full_path);
         } else {
-            $url = $this->filesystem->disk('attachment')->url($path);
+            $url = $this->filesystem->disk('attachment')->url($model->full_path);
         }
-
-        $fixWidth = Attachment::FIX_WIDTH;
 
         $attributes = [
             'order'             => $model->order,
@@ -87,10 +101,31 @@ class AttachmentSerializer extends AbstractSerializer
             if ($model->getAttribute('blur')) {
                 $attributes['thumbUrl'] = $url;
             } else {
-                $attributes['thumbUrl'] = $model->is_remote
-                    ? $url . '&imageMogr2/thumbnail/' . $fixWidth . 'x' . $fixWidth
-                    : Str::replaceLast('.', '_thumb.', $url);
+                if ($model->is_remote) {
+                    $attributes['thumbUrl'] = $url . (strpos($url, '?') === false ? '?' : '&')
+                        . 'imageMogr2/thumbnail/' . Attachment::FIX_WIDTH . 'x' . Attachment::FIX_WIDTH;
+                } else {
+                    // 缩略图不存在时使用原图
+                    $attributes['thumbUrl'] = $this->filesystem->disk('attachment')->exists($model->thumb_path)
+                        ? Str::replaceLast('.', '_thumb.', $url)
+                        : $url;
+                }
             }
+        } elseif ($model->type == Attachment::TYPE_OF_ANSWER) {
+            $attributes['thumbUrl'] = $url;
+        }
+
+        // 绑定首帖的附件，如果是付费或开启了预览，返回后端地址
+        if (
+            $model->type == Attachment::TYPE_OF_FILE &&
+            $model->post &&
+            $model->post->is_first &&
+            (
+                ($model->post->thread->price > 0 || $model->post->thread->attachment_price > 0) ||
+                ($this->settings->get('qcloud_cos_doc_preview', 'qcloud') && $this->settings->get('qcloud_cos', 'qcloud'))
+            )
+        ) {
+            $attributes['url'] = $this->url->to('/api/attachments/' . $model->id) . '?t=' .Attachment::getFileToken($this->actor);
         }
 
         return $attributes;

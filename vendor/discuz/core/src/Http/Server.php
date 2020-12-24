@@ -18,14 +18,14 @@
 
 namespace Discuz\Http;
 
+use Discuz\Foundation\Application;
 use Discuz\Foundation\SiteApp;
 use Discuz\Http\Middleware\RequestHandler;
-use Nyholm\Psr7\Factory\Psr17Factory;
-use Nyholm\Psr7Server\ServerRequestCreator;
+use Laminas\Diactoros\Response;
+use Laminas\Diactoros\ServerRequest;
+use Laminas\Diactoros\ServerRequestFactory;
 use Psr\Http\Message\ServerRequestInterface;
 use Throwable;
-use Nyholm\Psr7\Response;
-use Nyholm\Psr7\ServerRequest;
 use Laminas\HttpHandlerRunner\Emitter\SapiEmitter;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
 use Laminas\Stratigility\Middleware\ErrorResponseGenerator;
@@ -35,8 +35,11 @@ class Server extends SiteApp
 {
     public function listen()
     {
-        $this->siteBoot();
-
+        try {
+            $this->siteBoot();
+        } catch (Throwable $e) {
+            exit($this->formatBootException($e));
+        }
         $pipe = new MiddlewarePipe();
 
         $pipe->pipe(new RequestHandler([
@@ -44,12 +47,11 @@ class Server extends SiteApp
             '/' => 'discuz.web.middleware'
         ], $this->app));
 
-        $psr17Factory = new Psr17Factory();
-        $request = (new ServerRequestCreator($psr17Factory, $psr17Factory, $psr17Factory, $psr17Factory))->fromGlobals();
+        $request = ServerRequestFactory::fromGlobals();
 
         $this->app->instance('request', $request);
         $this->app->alias('request', ServerRequestInterface::class);
-		//echoDebug('new_RequestHandlerRunner...');
+
         $runner = new RequestHandlerRunner(
             $pipe,
             new SapiEmitter,
@@ -58,10 +60,49 @@ class Server extends SiteApp
             },
             function (Throwable $e) {
                 $generator = new ErrorResponseGenerator;
-                return $generator($e, new ServerRequest, new Response);
+                return $generator($e, new ServerRequest(), new Response());
             }
         );
-		
+
         $runner->run();
+
+        //增加性能日志
+        //$this->addPerformanceLog();
+    }
+
+    /**
+     * Display the most relevant information about an early exception.
+     * @param Throwable $error
+     * @return string
+     */
+    private function formatBootException(Throwable $error): string
+    {
+        $message = $error->getMessage();
+        $file = $error->getFile();
+        $line = $error->getLine();
+        $type = get_class($error);
+        $this->app->make('log')->error($error);
+
+        return <<<ERROR
+            Discuz Q! encountered a boot error ($type)<br />
+            thrown in <b>$file</b> on line <b>$line</b>
+ERROR;
+    }
+
+    protected function addPerformanceLog()
+    {
+        $this->app->make('performancelog')->info(json_encode([
+            'app_version' => Application::VERSION,
+            'opcache_enable' => function_exists('opcache_get_status') ? opcache_get_status(true) : false,
+            'response_time' => microtime(true) - DISCUZ_START.'s',
+            'include_files' => count(get_included_files()),
+            'memory_use' => $this->memory_usage(),
+            'api_path' => $this->app->make('request')->getUri()->getPath(),
+        ]));
+    }
+
+    private function memory_usage()
+    {
+        return (! function_exists('memory_get_usage')) ? '0' : round(memory_get_usage()/1024/1024, 2).'MB';
     }
 }

@@ -111,6 +111,14 @@ class EditThread
             $thread->timestamps = false;
         }
 
+        // 长文可以设置、编辑 附件价格
+        if (isset($attributes['attachment_price']) && $thread->type == Thread::TYPE_OF_LONG) {
+            $this->assertCan($this->actor, 'edit', $thread);
+
+            if ($thread->attachment_price =  (float) $attributes['attachment_price']) {
+                $this->assertCan($this->actor, 'createThreadPaid');
+            }
+        }
         // 非文字贴可设置价格
         if (isset($attributes['price']) && $thread->type !== Thread::TYPE_OF_TEXT) {
             $this->assertCan($this->actor, 'edit', $thread);
@@ -123,15 +131,15 @@ class EditThread
 
         if ($thread->price > 0 && isset($attributes['free_words'])) {
             $this->assertCan($this->actor, 'edit', $thread);
-
-            $thread->free_words = (int) $attributes['free_words'];
+            $thread->free_words = (float)Arr::get($this->data, 'attributes.free_words', 0);
         }
 
         if (isset($attributes['longitude']) && isset($attributes['latitude'])) {
             $this->assertCan($this->actor, 'edit', $thread);
 
-            $thread->longitude = Arr::get($this->data, 'attributes.longitude', 0);
-            $thread->latitude = Arr::get($this->data, 'attributes.latitude', 0);
+            $thread->longitude = (float) Arr::get($this->data, 'attributes.longitude', 0);
+            $thread->latitude = (float) Arr::get($this->data, 'attributes.latitude', 0);
+            $thread->address = Arr::get($this->data, 'attributes.address', '');
             $thread->location = Arr::get($this->data, 'attributes.location', '');
         }
 
@@ -159,6 +167,14 @@ class EditThread
             }
         }
 
+        if (isset($attributes['isSite'])) {
+            $this->assertCan($this->actor, 'isSite', $thread);
+
+            if ($thread->is_site != $attributes['isSite']) {
+                $thread->is_site = $attributes['isSite'];
+            }
+        }
+
         if (isset($attributes['isEssence'])) {
             $this->assertCan($this->actor, 'essence', $thread);
 
@@ -174,12 +190,10 @@ class EditThread
         if (isset($attributes['isDeleted'])) {
             $this->assertCan($this->actor, 'hide', $thread);
 
-            $message = $attributes['message'] ?? '';
-
             if ($attributes['isDeleted']) {
-                $thread->hide($this->actor, ['message' => $message]);
+                $thread->hide($this->actor, ['message' => $attributes['message'] ?? '']);
             } else {
-                $thread->restore($this->actor, ['message' => $message]);
+                $thread->restore($this->actor, ['message' => $attributes['message'] ?? '']);
             }
         }
 
@@ -187,35 +201,27 @@ class EditThread
             new Saving($thread, $this->actor, $this->data)
         );
 
-        $type = $thread->type;
-        $validAttr = $thread->getDirty() + compact('type');
-        //视频贴验证是否上传视频
-        $file_id = Arr::get($this->data, 'attributes.file_id');
-        $file_name = Arr::get($this->data, 'attributes.file_name');
+        $validator->valid($thread->getDirty());
 
-        if ($file_id !== null || $file_name !== null) {
-            $validAttr += compact('file_id', 'file_name');
-        }
-        $validator->valid($validAttr);
-
-        //编辑视频
-        if ($thread->type == Thread::TYPE_OF_VIDEO && $file_id) {
+        // 编辑视频帖或语音帖
+        if ($fileId = Arr::get($this->data, 'attributes.file_id')) {
             /** @var ThreadVideo $threadVideo */
             $threadVideo = $threadVideos->findOrFailByThreadId($thread->id);
 
-            if ($threadVideo->file_id != $attributes['file_id']) {
-                // 将旧的视频主题 id 设为 0
+            if ($threadVideo->file_id != $fileId) {
+                // 将旧的视频或语音主题 id 设为 0
                 $threadVideo->thread_id = 0;
                 $threadVideo->save();
 
-                // 创建新的视频记录
+                // 创建新的视频或语音
                 $video = $bus->dispatch(
-                    new CreateThreadVideo($this->actor, $thread, $this->data)
+                    new CreateThreadVideo($this->actor, $thread, $threadVideo->type, $this->data)
                 );
 
-                $thread->setRelation('threadVideo', $video);
+                $threadVideo->type === ThreadVideo::TYPE_OF_VIDEO && $thread->setRelation('threadVideo', $video);
+                $threadVideo->type === ThreadVideo::TYPE_OF_AUDIO && $thread->setRelation('threadAudio', $video);
 
-                // 重新上传视频修改为审核状态
+                // 重新上传视频或语音修改为审核状态
                 $thread->is_approved = Thread::UNAPPROVED;
             }
         }

@@ -119,10 +119,15 @@ export default {
       btnLoading:0,               //0表示没有loading状态，1：全部通过、2：全部删除、3：全部忽略
 
       //未审核0，已审核\通过1，已忽略2
+      visible:false
     }
   },
 
   methods:{
+    closeDelet(index) {
+      this.$refs[index][0].doClose();
+    },
+
     imgShowClick(list,imgIndex){
       this.url = [];
       let urlList = [];
@@ -281,14 +286,14 @@ export default {
       //编辑：/reply-to-topic  隐藏传入内容，带id
       //回帖：replyId
       let routeData = this.$router.resolve({
-        path: "/pages/topic/index?id=" + id,
+        path: "/topic/index?id=" + id,
       });
       window.open(routeData.href, '_blank');
     },
 
-    editClick(id){
+    editClick(id,typeId){
       let routeData = this.$router.resolve({
-        path: `/pages/topic/post?operating=edit&threadId=${id}`
+        path: `/thread/post?type=${typeId}&operating=edit&threadId=${id}`
       });
       window.open(routeData.href, '_blank');
     },

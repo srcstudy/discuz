@@ -46,11 +46,14 @@ class QcloudVodTranscodeVerify extends BaseQcloud
 
     protected $transcode;
 
-    public function __construct($transcode = '')
+    private $qcloudVodSubAppId;
+
+    public function __construct($transcode = '', $qcloudVodSubAppId)
     {
         parent::__construct();
 
         $this->transcode = $transcode;
+        $this->qcloudVodSubAppId = $qcloudVodSubAppId;
     }
 
     /**
@@ -69,9 +72,9 @@ class QcloudVodTranscodeVerify extends BaseQcloud
                 $value = $this->transcode;
             }
 
-            $res = $this->DescribeTranscodeTemplates($value);
+            $res = $this->DescribeTranscodeTemplates($value, $this->qcloudVodSubAppId);
         } catch (TencentCloudSDKException $e) {
-            throw new TranslatorException('tencent_vod_error', [$e->getCode()]);
+            throw new TranslatorException('tencent_vod_error', [$e->getErrorCode()]);
         }
         if ($res->TotalCount == 0) {
             throw new TencentCloudSDKException('tencent_vod_transcode_error');

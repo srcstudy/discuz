@@ -21,6 +21,7 @@ namespace App\Api\Serializer;
 use App\Models\Thread;
 use App\Traits\HasPaidContent;
 use Discuz\Api\Serializer\AbstractSerializer;
+use Discuz\Auth\Anonymous;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Tobscure\JsonApi\Relationship;
 
@@ -61,19 +62,24 @@ class ThreadSerializer extends AbstractSerializer
             'type'              => (int) $model->type,
             'title'             => $model->title,
             'price'             => $model->price,
-            'freeWords'         => (int) $model->free_words,
+            'attachmentPrice'   => $model->attachment_price,
+            'freeWords'         => $this->percentFreeWord($model),
             'viewCount'         => (int) $model->view_count,
             'postCount'         => (int) $model->post_count,
             'paidCount'         => (int) $model->paid_count,
             'rewardedCount'     => (int) $model->rewarded_count,
             'longitude'         => $model->longitude,
             'latitude'          => $model->latitude,
+            'address'           => $model->address,
             'location'          => $model->location,
             'createdAt'         => $this->formatDate($model->created_at),
             'updatedAt'         => $this->formatDate($model->updated_at),
             'isApproved'        => (int) $model->is_approved,
             'isSticky'          => (bool) $model->is_sticky,
             'isEssence'         => (bool) $model->is_essence,
+            'isSite'            => (bool) $model->is_site,
+            'isAnonymous'       => (bool) $model->is_anonymous,
+            'canBeReward'       => $model->price == 0 && $this->gate->forUser($model->user)->allows('canBeReward', $model),
             'canViewPosts'      => $gate->allows('viewPosts', $model),
             'canReply'          => $gate->allows('reply', $model),
             'canApprove'        => $gate->allows('approve', $model),
@@ -96,7 +102,35 @@ class ThreadSerializer extends AbstractSerializer
             $attributes['isPaid'] = $model->is_paid;
         }
 
+        if ($model->attachment_price > 0) {
+            $attributes['isPaidAttachment'] = $model->is_paid_attachment;
+        }
+
+        // 问答围观状态
+        if ($model->type === Thread::TYPE_OF_QUESTION) {
+            $attributes['onlookerState'] = $model->getAttribute('onlookerState') ?? true;
+        }
+
+        // 匿名（最后设置匿名，避免其他地方取不到用户）
+        if ($model->is_anonymous && $model->user->id != $this->actor->id) {
+            $model->user = new Anonymous;
+        }
+
         return $attributes;
+    }
+
+    public function percentFreeWord($model)
+    {
+        if ($model->free_words <= 1) {
+            return $model->free_words;
+        } else {
+            $percent = $model->free_words / strlen($model->firstPost->content);
+            if ($percent > 1) {
+                return 1;
+            } else {
+                return sprintf('%.2f', $percent);
+            }
+        }
     }
 
     /**
@@ -216,8 +250,39 @@ class ThreadSerializer extends AbstractSerializer
         return $this->hasOne($thread, ThreadVideoSerializer::class);
     }
 
+    /**
+     * @param $thread
+     * @return Relationship
+     */
+    public function threadAudio($thread)
+    {
+        return $this->hasOne($thread, ThreadVideoSerializer::class);
+    }
+
+    /**
+     * @param $thread
+     * @return Relationship
+     */
     public function topic($thread)
     {
         return $this->hasMany($thread, TopicSerializer::class);
+    }
+
+    /**
+     * @param $thread
+     * @return Relationship
+     */
+    public function question($thread)
+    {
+        return $this->hasOne($thread, QuestionAnswerSerializer::class);
+    }
+
+    /**
+     * @param $thread
+     * @return Relationship
+     */
+    public function onlookers($thread)
+    {
+        return $this->hasMany($thread, UserSerializer::class);
     }
 }

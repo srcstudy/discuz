@@ -1,5 +1,5 @@
 <?php
-$SELF_VERSION = "200806";
+$SELF_VERSION = "v2.1.201117";
 
 set_time_limit(300);
 error_reporting(E_ALL ^ E_WARNING);
@@ -569,6 +569,18 @@ function download_dzq_main()
 	if (get_var('overwrite')) {
 		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'static'));
 		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'static-admin'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . '_nuxt'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'pc-pages'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'pc-topic'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'invite'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'manage'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'modify'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'my'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'site'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'thread'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'topic'));
+		remove_dir(realpath(__DIR__ . DIRECTORY_SEPARATOR . 'user'));
+		
 	}
 
 	$url = PACKAGE_BASE . 'dist/qcloud/discuz/' . $version;
@@ -698,7 +710,7 @@ function check_httpd_config()
 		$install_str = http_download_to_str($base_url . "/install", true);
 		if ($install_str === FALSE || !preg_match("/adminUsername/m", $install_str)) {
 			$url_check['install_url'] = false;
-		}	
+		}
 	} catch (Exception $e) {
 		$url_check['install_url'] = false;
 	}
@@ -707,9 +719,9 @@ function check_httpd_config()
 		$index_path = $base_url;
 		$LANG['index_url1'] = "访问 $index_path 测试";
 		$index_str = http_download_to_str($index_path, true);
-		if ($index_str === FALSE || !preg_match("/from=pc/m", $index_str)) {
+		if ($index_str === FALSE || (!preg_match("/from=pc/m", $index_str) && !preg_match("/_nuxt/m", $index_str))) {
 			$url_check['index_url1'] = false;
-		}	
+		}
 	} catch (Exception $e) {
 		$url_check['index_url1'] = false;
 	}
@@ -718,7 +730,7 @@ function check_httpd_config()
 		$index_path = $base_url . "/notexists";
 		$LANG['index_url2'] = "访问 $index_path 测试";
 		$index_str = http_download_to_str($index_path, true);
-		if ($index_str === FALSE || !preg_match("/from=pc/m", $index_str)) {
+		if ($index_str === FALSE || (!preg_match("/from=pc/m", $index_str) && !preg_match("/_nuxt/m", $index_str))) {
 			$url_check['index_url2'] = false;
 		}
 	} catch (Exception $e) {
@@ -771,12 +783,13 @@ function check_httpd_config()
 
 //endregion
 
-//region Discuz! Q初始化
+//region Discuz! Q初始化输入信息
 
 function show_init_form()
 {
 	global $SCRIPT_NAME, $STEP;
 
+	// $action == 1 表示是提交的表单
 	$action = get_var('action');
 
 	$forumTitle = get_var('forumTitle');
@@ -849,7 +862,13 @@ function show_init_form()
 		&& !$mysqlPasswordInvalid && !$tablePrefixInvalid && !$adminUsernameInvalid && !$adminPasswordInvalid && !$mysqlUserPassInvalid;
 
 	if ($ready_to_install) {
-		make_lock_file();
+		if (has_mysql_init_sql()) {
+			// 如果有初始化sql，则进入下一步，由本程序进行初始化，不通过POST到 http://localhost/install 进行初始化
+			$STEP += 1;
+			$ready_to_install = 0;
+		} else {
+			make_lock_file();
+		}
 		auto_next_step();
 	?>
 		<div class="alert alert-success" role="alert">
@@ -973,6 +992,204 @@ function show_init_form()
 
 //endregion
 
+//region Discuz! Q初始化
+
+function init_dzq()
+{
+	$forumTitle = get_var('forumTitle');
+	$mysqlHost = get_var('mysqlHost');
+	$mysqlDatabase = get_var('mysqlDatabase');
+	$mysqlUsername = get_var('mysqlUsername');
+	$mysqlPassword = get_var('mysqlPassword');
+	$tablePrefix = get_var('tablePrefix');
+	$adminUsername = get_var('adminUsername');
+	$adminPassword = get_var('adminPassword');
+	
+	$version = extract_version_from_source();
+	$logs = "开始安装... \n";
+	$logs .= "数据库服务器 ${mysqlHost} \n";
+
+	$dzq_path = dirname(__DIR__);
+
+	require $dzq_path . '/vendor/autoload.php';
+	
+	$logs .= "Discuz! Q主目录 ${dzq_path} \n";
+	$app = new Discuz\Foundation\Application($dzq_path);
+	$siteApp = new Discuz\Foundation\SiteApp($app);
+	$siteApp->siteBoot();
+
+	$logs .= drop_config_file($app);
+	$logs .= install_database($app, $mysqlHost, $mysqlUsername, $mysqlPassword, $tablePrefix, $mysqlDatabase);
+	$logs .= install_config($app, $mysqlHost, $mysqlUsername, $mysqlPassword, $tablePrefix, $mysqlDatabase);
+	$logs .= install_key_and_cert_generate($app);
+	$logs .= run_db_script($app, $mysqlDatabase, $tablePrefix);
+	$logs .= update_settings($app, $forumTitle);
+	$logs .= update_admin_user($adminUsername, $adminPassword);
+	$logs .= cloud_report($app, get_server_url());
+	touch($app->storagePath() . '/install.lock');
+
+?>
+	<h2>Discuz! Q <?= $version ?> 安装成功</h2>
+	<p>安装日志：</p>
+	<pre class="pre-logs"><?= $logs ?></pre>
+	<p>点击下一步完成安装</p>
+	<form action="<?= htmlspecialchars(get_server_url()); ?>" method="get" class="mx-2" id="userform">
+	</form>
+<?php
+}
+
+function drop_config_file($app)
+{
+	$configFile = $app->basePath('config/config.php');
+	file_exists($configFile) && unlink($configFile);
+	return "配置文件 ${configFile} \n";
+}
+
+function install_database($app, $host, $username, $password, $prefix, $database)
+{
+	$port = 3306;
+	$mysqlConfig = [
+		'driver' => 'mysql',
+		'host' => $host,
+		'port' => $port,
+		'database' => '',
+		'username' => $username,
+		'password' => $password,
+		'charset' => 'utf8mb4',
+		'collation' => 'utf8mb4_unicode_ci',
+		'prefix' => $prefix,
+		'prefix_indexes' => true,
+		'strict' => true,
+		'engine' => 'InnoDB',
+		'options' => extension_loaded('pdo_mysql') ? array_filter([
+			PDO::MYSQL_ATTR_SSL_CA => '',
+		]) : [],
+	];
+	$db = $app->make('db');
+	$app['config']->set(
+		'database.connections',
+		[
+			'mysql' => $mysqlConfig
+		]
+	);
+
+	$pdo = $db->connection('mysql')->getPdo();
+	$sql = sprintf('CREATE DATABASE IF NOT EXISTS `%s`  DEFAULT CHARACTER SET = `utf8mb4` DEFAULT COLLATE = `utf8mb4_unicode_ci`', $database);
+	$pdo->query($sql)->execute();
+
+	$app['config']->set(
+		'database.connections',
+		[
+			'mysql' => array_merge($mysqlConfig, [
+				'database' => $database,
+			])
+		]
+	);
+	$db->purge('mysql');
+	$db->connection('mysql');
+	return "创建数据库 ${database} ... 完成 \n";
+}
+
+function install_config($app, $host, $username, $password, $prefix, $database)
+{
+	$port = 3306;
+
+	$defaultConfig = file_get_contents($app->configPath('config_default.php'));
+
+	if (Illuminate\Support\Str::contains($host, ':')) {
+		list($host, $port) = explode(':', $host, 2);
+	}
+
+	$stub = str_replace([
+		'DummyDbHost',
+		'DummyDbPort',
+		'DummyDbDatabase',
+		'DummyDbUsername',
+		'DummyDbPassword',
+		'DummyDbPrefix',
+	], [
+		$host,
+		$port,
+		$database,
+		$username,
+		$password,
+		$prefix,
+	], $defaultConfig);
+
+	file_put_contents($app->configPath('config.php'), $stub);
+	return "配置文件创建 ... 完成 \n";
+}
+
+function install_key_and_cert_generate($app)
+{
+	$input = new Symfony\Component\Console\Input\ArrayInput([]);
+	$output = new Symfony\Component\Console\Output\BufferedOutput();
+	//站点唯一key
+	$app->make(App\Console\Commands\KeyGenerate::class)->run($input, $output);
+	//证书
+	$app->make(App\Console\Commands\RsaCertGenerate::class)->run($input, $output);
+	return "生成新的站点密钥 ... 成功 \n";
+}
+
+function run_db_script($app, $database, $prefix)
+{
+	$sqlfile = $app->databasePath() . "/init_mysql.sql";
+	$sql = file_get_contents($sqlfile);
+	$sql = str_replace('dzqdatabase_placeholder', $database, $sql);
+	$sql = str_replace('ppre_', $prefix, $sql);
+	$db = $app->make('db');
+	$pdo = $db->connection('mysql')->getPdo();
+	$pdo->exec($sql);
+	return "执行数据库初始化脚本 ... 成功 \n";
+}
+
+function update_settings($app, $title)
+{
+	$setting = $app->make(App\Settings\SettingsRepository::class);
+	$setting->set('site_name', $title);
+	$setting->set('site_install', Illuminate\Support\Carbon::now());
+	return "更新站点设置 ... 完成  \n";
+}
+
+function update_admin_user($username, $password)
+{
+	$user = App\Models\User::find(1);
+	$user->username = $username;
+	$user->password = $password;
+	$user->created_at = date('Y-m-d H:i:s');
+	$user->save();
+	return "管理员用户创建 ... 完成  \n";
+}
+
+function cloud_report($app, $url)
+{
+	$log = "生成站点ID ... ";
+	$config = [
+		'base_uri' => 'https://cloud.discuz.chat/api/',
+		'timeout'  =>  15
+	];
+	try {
+		$client = new GuzzleHttp\Client($config);
+		$client->requestAsync('POST', 'cloud/register', [
+			'json' => ['url' => $url]
+		])->then(function (Psr\Http\Message\ResponseInterface $response) use ($app, $log) {
+			$setting = $app->make(App\Settings\SettingsRepository::class);
+			$data = json_decode($response->getBody()->getContents(), true);
+			$setting->set('site_id', Illuminate\Support\Arr::get($data, 'site_id'));
+			$setting->set('site_secret', Illuminate\Support\Arr::get($data, 'site_secret'));
+		})->wait();
+	} catch (Exception $e) {
+		$log .= "失败 \n";
+		return $log;
+	}
+	$log .= "完成 \n";
+	$log .= "安装完成 \n";
+	return $log;
+}
+
+
+//endregion
+
 //region 升级
 function upgrade_existing_installation()
 {
@@ -997,10 +1214,10 @@ function upgrade_existing_installation()
 	$upgrade_url = "https://discuzq-docs-1258344699.cos.ap-guangzhou.myqcloud.com/upgrade.txt";
 	$str = check_and_strip_upgrade_md5(http_download_to_str($upgrade_url));
 	$releases = eval($str);
-	if (!array_key_exists($new_version, $releases)) {
-		throw new Exception("升级文件中无法找到版本" . $new_version);
-	}
 	$logs .= "版本升级文件下载并验证完成\n";
+	if (!array_key_exists($new_version, $releases)) {
+		$logs .= "执行默认升级操作 \n";
+	}
 	$versions_to_apply = array_filter($releases, function ($ver) use ($old_version, $new_version) {
 		return version_compare($ver, $old_version, ">") && version_compare($ver, $new_version, "<=");
 	}, ARRAY_FILTER_USE_KEY);
@@ -1016,7 +1233,7 @@ function upgrade_existing_installation()
 	<p>升级日志：</p>
 	<pre class="pre-logs"><?= $logs ?></pre>
 	<p>点击下一步完成安装</p>
-	<form action="<?= get_server_url() ?>" method="get" class="mx-2" id="userform">
+	<form action="<?= htmlspecialchars(get_server_url()) ?>" method="get" class="mx-2" id="userform">
 	</form>
 	<?php
 }
@@ -1087,6 +1304,8 @@ function apply_version_upgrade_migration($params)
 	return $logs;
 }
 
+
+
 function check_and_strip_upgrade_md5($str)
 {
 	$lines = explode("\n", $str);
@@ -1155,7 +1374,7 @@ function silent_self_update()
 			try {
 				do_self_update();
 			} catch (Exception $e) {
-			}	
+			}
 		}
 	}
 	auto_next_step();
@@ -1177,13 +1396,13 @@ function do_self_update()
 			}
 		}
 	}
-	return array($need_upgrade, $self_replaced);
+	return array($need_upgrade, $self_replaced, $remote_version);
 }
 
 function check_self_update()
 {
 	global $SCRIPT_NAME;
-	list($need_upgrade, $self_replaced) = do_self_update();
+	list($need_upgrade, $self_replaced, $remote_version) = do_self_update();
 	if ($need_upgrade) {
 	?>
 		<div class="alert alert-primary" role="alert">
@@ -1245,10 +1464,10 @@ function http_download_to_str($url, $ignore_ssl_error = false)
 	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36');
 	if ($ignore_ssl_error) {
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);		
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 	} else {
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);	
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);
 	}
 
 	$response = curl_exec($ch);
@@ -1264,9 +1483,11 @@ function get_var($var)
 {
 	if (!isset($_GET[$var])) {
 		if (!isset($_POST[$var])) return false;
-		return $_POST[$var];
+		$ret =  $_POST[$var];
+	} else {
+		$ret = $_GET[$var];
 	}
-	return $_GET[$var];
+	return htmlspecialchars($ret);
 }
 
 function redirect($url)
@@ -1460,6 +1681,7 @@ function check_mysql_version($host, $username, $password)
 
 function check_mysql_database($host, $username, $password, $database)
 {
+	$database = addslashes($database);
 	$pdo = check_mysql_connection($host, $username, $password);
 	if ($pdo === FALSE) {
 		return "数据库无法连接";
@@ -1498,7 +1720,7 @@ function build_steps()
 				3 => 'check_symlink',
 				4 => 'check_httpd_config',
 				5 => 'show_init_form',
-			);	
+			);
 		} else {
 			$steps = array(
 				0 => 'silent_self_update',
@@ -1510,7 +1732,7 @@ function build_steps()
 				6 => 'check_symlink',
 				7 => 'check_httpd_config',
 				8 => 'show_init_form',
-			);	
+			);
 		}
 	} else {
 		$steps = array(
@@ -1521,6 +1743,11 @@ function build_steps()
 			4 => 'download_vendor',
 			5 => 'show_init_form'
 		);
+	}
+
+	// 如果有数据库初始化脚本，由本程序进行初始化
+	if (has_mysql_init_sql()) {
+		$steps[max(array_keys($steps)) + 1] = 'init_dzq';
 	}
 
 	// 在第0步的时候，不进行跨目录访问
@@ -1571,6 +1798,11 @@ function save_current_ver_as_old_ver()
 	save_current_version('.oldversion');
 }
 
+/**
+ * 返回旧的版本号，用于升级时，代码覆盖完之后，执行后续的升级步骤
+ * 因为此时代码已经覆盖为新的，所以已经无法从源代码中获取版本号
+ * @return string
+ */
 function get_old_version()
 {
 	return file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . ".oldversion");
@@ -1604,6 +1836,12 @@ function check_full_install_pack()
 {
 	$parent_dir = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..');
 	$file = $parent_dir . "/.dzq-full-install-pack";
+	return file_exists($file);
+}
+
+function has_mysql_init_sql()
+{
+	$file = __DIR__ . DIRECTORY_SEPARATOR . '../database/init_mysql.sql';
 	return file_exists($file);
 }
 

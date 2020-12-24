@@ -50,7 +50,29 @@ class BaseFormatter
      */
     protected static $actor;
 
+    /**
+     * @var Application
+     */
     protected $app;
+
+    /**
+     * @var array
+     */
+    protected $allowHtmlElements = [
+        'summary'       => [],
+        'details'       => [],
+        'center'        => [],
+        'small'         => [],
+        'sub'           => [],
+        'sup'           => [],
+        'br'            => [],
+        'p'             => [],
+        'font'          => [],
+        'audio'         => ['src', 'controls', 'width', 'height', 'loop'],
+        'video'         => ['src', 'controls', 'width', 'height'],
+        'span'          => ['class'],
+        'blockquote'    => ['class'],
+    ];
 
     /**
      * @param UrlGenerator $url
@@ -132,8 +154,6 @@ class BaseFormatter
     {
         $configurator = new Configurator;
 
-        $configurator->enableJavaScript();
-
         $configurator->rootRules->enableAutoLineBreaks();
 
         $configurator->rendering->engine = 'PHP';
@@ -210,10 +230,12 @@ class BaseFormatter
 
     protected function confHtml($configurator)
     {
-        $configurator->HTMLElements->allowElement('blockquote');
-        $configurator->HTMLElements->allowAttribute('blockquote', 'class');
-        $configurator->HTMLElements->allowElement('span');
-        $configurator->HTMLElements->allowAttribute('span', 'class');
+        foreach ($this->allowHtmlElements as $element => $attrs) {
+            $configurator->HTMLElements->allowElement($element);
+            foreach ($attrs as $attr) {
+                $configurator->HTMLElements->allowAttribute($element, $attr);
+            }
+        }
     }
 
     protected function confUserMention($configurator)

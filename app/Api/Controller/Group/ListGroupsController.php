@@ -48,18 +48,28 @@ class ListGroupsController extends AbstractListController
 
         $isDefault = (bool) Arr::get($filter, 'isDefault', false);
         $type = Arr::get($filter, 'type', '');
+        $isPaid = Arr::get($filter, 'isPaid', '');
 
         $groups = Group::query()
             ->where('id', '<>', Group::UNPAID)
             ->when($isDefault, function (Builder $query) {
                 return $query->where('default', true);
             })
-            ->when($type === 'invite', function (Builder $query) use ($include) {
+            ->when($isPaid != '', function (Builder $query) use ($isPaid) {
+                return $query->where('is_paid', (bool) $isPaid);
+            })
+            ->when($type === 'invite', function (Builder $query) use ($include,$request) {
                 // 邀请用户组关联权限不返回 分类下权限
                 if (in_array('permission', $include)) {
                     $query->with(['permission' => function ($query) {
-                        $query->where('permission', 'not like', 'category%');
+                        $query->where('permission', 'not like', 'category%')
+                            ->where('permission', 'not like', 'switch.%');
                     }]);
+                }
+
+                //只有管理员用户组可以展示邀请管理员
+                if (!$request->getAttribute('actor')->isAdmin()) {
+                    $query->where('id', '<>', Group::ADMINISTRATOR_ID);
                 }
 
                 // 不返回游客用户组

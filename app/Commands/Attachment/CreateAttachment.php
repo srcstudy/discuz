@@ -98,15 +98,18 @@ class CreateAttachment
     {
         $this->events = $events;
 
-        $this->assertCan($this->actor, 'attachment.create.' . $this->type);
+        $this->assertCan($this->actor, 'attachment.create.' . (int) in_array($this->type, [
+                Attachment::TYPE_OF_IMAGE,
+                Attachment::TYPE_OF_DIALOG_MESSAGE,
+                Attachment::TYPE_OF_ANSWER,
+            ]));
 
         $file = $this->file;
 
         $ext = pathinfo($file->getClientFilename(), PATHINFO_EXTENSION);
-        $ext = $ext ? ".$ext" : '';
 
         $tmpFile = tempnam(storage_path('/tmp'), 'attachment');
-        $tmpFileWithExt = $tmpFile . $ext;
+        $tmpFileWithExt = $tmpFile . ($ext ? ".$ext" : '');
 
         $file->moveTo($tmpFileWithExt);
 
@@ -120,7 +123,12 @@ class CreateAttachment
             );
 
             // 验证
-            $validator->valid(['type' => $this->type, 'size' => $file->getSize(), 'file' => $file]);
+            $validator->valid([
+                'type' => $this->type,
+                'file' => $file,
+                'size' => $file->getSize(),
+                'ext' => strtolower($ext),
+            ]);
 
             $this->events->dispatch(
                 new Uploading($this->actor, $file)
@@ -136,11 +144,11 @@ class CreateAttachment
             $attachment = Attachment::build(
                 $this->actor->id,
                 $this->type,
-                $file->hashName(),
+                $uploader->fileName,
                 $uploader->getPath(),
                 $this->name ?: $file->getClientOriginalName(),
                 $file->getSize(),
-                $file->getMimeType(),
+                $file->getClientMimeType(),
                 $uploader->isRemote(),
                 Attachment::APPROVED,
                 $this->ipAddress,

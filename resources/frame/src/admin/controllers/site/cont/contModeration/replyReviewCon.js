@@ -124,7 +124,6 @@ export default {
   },
 
   methods:{
-
     titleIcon(item){
       return commonHelper.titleIcon(item);
     },
@@ -293,7 +292,7 @@ export default {
       //回帖：replyId
 
       let routeData = this.$router.resolve({
-        path: "/pages/topic/index?id=" + id,   //id当前是回帖id
+        path: "/topic/index?id=" + id,   //id当前是回帖id
       });
       window.open(routeData.href, '_blank');
     },

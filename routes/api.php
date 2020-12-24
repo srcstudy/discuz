@@ -1,8 +1,19 @@
 <?php
 
 /**
- * Discuz & Tencent Cloud
- * This is NOT a freeware, use is subject to license terms
+ * Copyright (C) 2020 Tencent Cloud.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 use App\Api\Controller as ApiController;
@@ -44,9 +55,11 @@ $route->get('/signature', 'signature', ApiController\Qcloud\CreateVodUploadSigna
 |--------------------------------------------------------------------------
 */
 
+$route->get('/groups/paid', 'groups.paid', ApiController\Group\ListPaidUserGroupsController::class);
 $route->get('/groups', 'groups.list', ApiController\Group\ListGroupsController::class);
 $route->get('/groups/{id}', 'groups.resource', ApiController\Group\ResourceGroupsController::class);
-$route->post('/groups', 'group.create', ApiController\Group\CreateGroupController::class);
+$route->post('/groups', 'groups.create', ApiController\Group\CreateGroupController::class);
+$route->post('/groups/{id}/icon', 'groups.upload.icon', ApiController\Group\UploadIconController::class);
 $route->patch('/groups/{id}', 'group.update', ApiController\Group\UpdateGroupController::class);
 $route->patch('/groups', 'group.update', ApiController\Group\UpdateGroupsController::class);
 $route->delete('/groups/{id}', 'group.delete', ApiController\Group\DeleteGroupController::class);
@@ -54,7 +67,7 @@ $route->delete('/groups', 'groups.delete', ApiController\Group\DeleteGroupsContr
 
 /*
 |--------------------------------------------------------------------------
-| Groups - Permission
+| Permission
 |--------------------------------------------------------------------------
 */
 
@@ -77,21 +90,26 @@ $route->post('/refresh-token', 'oauth2.refresh.token', ApiController\Oauth2\Refr
 |--------------------------------------------------------------------------
 */
 
-$route->get('/oauth/wechat', 'wechat.login', ApiController\Users\WechatLoginController::class);
+$route->get('/oauth/wechat', 'wechat.login', ApiController\Users\WechatLoginController::class); // 已弃用
 $route->get('/oauth/wechat/user', 'wechat.user', ApiController\Users\WechatUserController::class);
-$route->get('/oauth/wechat/pc', 'wechat.web.login', ApiController\Users\WechatWebLoginController::class);
+$route->get('/oauth/wechat/pc/bind', 'wechat.pc.bind', ApiController\Users\WechatPcBindController::class);
+$route->get('/oauth/wechat/pc/bind/{session_token}', 'wechat.pc.bind.poll', ApiController\Users\WechatPcBindPollController::class);
+$route->get('/oauth/wechat/pc', 'wechat.web.login', ApiController\Users\WechatWebLoginController::class); // 已弃用
 $route->get('/oauth/wechat/pc/user', 'wechat.pc.user', ApiController\Users\WechatWebUserController::class);
 $route->get('/oauth/welink', 'welink.login', ApiController\Users\WelinkLoginController::class);
 $route->get('/oauth/wechat/web/user', 'wechat.web.user', ApiController\Users\WechatWebUserLoginController::class);
 $route->get('/oauth/wechat/web/user/event', 'wechat.web.user.event', ApiController\Users\WechatWebUserLoginEventController::class);
 $route->post('/oauth/wechat/web/user/event', 'wechat.web.user.postevent', ApiController\Users\WechatWebUserLoginPostEventController::class);
-$route->get('/oauth/wechat/web/user/serach', 'wechat.web.user.search', ApiController\Users\WechatWebUserLoginSearchController::class);
+$route->get('/oauth/wechat/web/user/search', 'wechat.web.user.search', ApiController\Users\WechatWebUserLoginSearchController::class);
 $route->post('/oauth/wechat/miniprogram', 'wechat.miniprogram.login', ApiController\Users\WechatMiniProgramLoginController::class);
 $route->get('/oauth/wechat/miniprogram/code', 'wechat.mini.program.code', ApiController\Wechat\WechatMiniProgramCodeController::class);
 $route->get('/oauth/wechat/qy', 'wechat.qy.login', ApiController\Users\WechatQyLoginController::class);
 $route->get('/oauth/wechat/qy/user', 'wechat.qy.user', ApiController\Users\WechatQyUserController::class);
 $route->get('/oauth/qq', 'qq.login', ApiController\Users\QQLoginController::class);
 $route->get('/oauth/qq/user', 'qq.user', ApiController\Users\QQUserController::class);
+$route->get('/oauth/wechat/pc/qrcode', 'wechat.pc.qrcode', ApiController\Users\WechatPcQrCodeController::class);
+$route->get('/oauth/wechat/pc/login/{session_token}', 'wechat.pc.login.poll', ApiController\Users\WechatPcLoginPollController::class);
+$route->get('/oauth/wechat/qrcode/login/{session_token}', 'wechat.qrcode.login', ApiController\Users\WechatQrcodeLoginController::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -99,6 +117,7 @@ $route->get('/oauth/qq/user', 'qq.user', ApiController\Users\QQUserController::c
 |--------------------------------------------------------------------------
 */
 
+$route->get('/users/recommended', 'user.recommended', ApiController\Users\RecommendedUserController::class);
 $route->get('/users', 'users.list', ApiController\Users\ListUsersController::class);
 $route->post('/users', 'users.create', ApiController\Users\CreateUserController::class);
 $route->post('/users/pay-password/reset', '', ApiController\Users\ResetPayPasswordController::class);
@@ -149,6 +168,7 @@ $route->delete('/categories/{id}', 'categories.delete', ApiController\Category\D
 $route->get('/favorites', 'favorites', ApiController\Threads\ListFavoritesController::class);
 $route->get('/threads', 'threads.index', ApiController\Threads\ListThreadsController::class);
 $route->get('/threads/share/{id}', 'threads.share', ApiController\Threads\ShareThreadController::class);
+$route->get('/threads/relate/{id}', 'threads.relate', ApiController\Threads\RelateThreadsController::class);
 $route->get('/threads/likes', 'threads.likes', ApiController\Threads\ListLikesController::class);
 $route->get('/threads/{id}', 'threads.resource', ApiController\Threads\ResourceThreadController::class);
 $route->post('/threads', 'threads.create', ApiController\Threads\CreateThreadController::class);
@@ -173,6 +193,14 @@ $route->patch('/posts/batch', 'posts.batchUpdate', ApiController\Posts\BatchUpda
 $route->patch('/posts/{id}', 'posts.update', ApiController\Posts\UpdatePostController::class);
 $route->delete('/posts/batch/{ids}', 'posts.batchDelete', ApiController\Posts\BatchDeletePostsController::class);
 $route->delete('/posts/{id}', 'posts.delete', ApiController\Posts\DeletePostController::class);
+
+/*
+|--------------------------------------------------------------------------
+| Question
+|--------------------------------------------------------------------------
+*/
+
+$route->post('/questions/{question_id}/answer', 'questions.answer.create', ApiController\Question\CreateQuestionAnswerController::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -296,6 +324,7 @@ $route->post('/dialog/batch', 'dialog.batchCreate', ApiController\Dialog\BatchCr
 $route->get('/dialog', 'dialog.list', ApiController\Dialog\ListDialogController::class);
 $route->post('/dialog/message', 'dialog.message.create', ApiController\Dialog\CreateDialogMessageController::class);
 $route->get('/dialog/message', 'dialog.message.list', ApiController\Dialog\ListDialogMessageController::class);
+$route->delete('/dialog/{id}', 'dialog.delete', ApiController\Dialog\DeleteDialogController::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -314,7 +343,11 @@ $route->delete('/reports/batch/{ids}', 'reports.batchDelete', ApiController\Repo
 |--------------------------------------------------------------------------
 */
 
-$route->get('/analysis/goods', 'analysis.goods.url', ApiController\Analysis\ResourceAnalysisGoodsController::class);
+
+$route->post('/goods/analysis', 'goods.analysis', ApiController\Analysis\ResourceAnalysisGoodsController::class);
+$route->get('/goods/{id}', 'goods.resource', ApiController\Analysis\ResourceGoodsController::class);
+$route->post('/analysis/goods', 'analysis.goods.url', ApiController\Analysis\ResourceAnalysisGoodsController::class);
+
 
 /*
 |--------------------------------------------------------------------------
@@ -328,6 +361,7 @@ $route->delete('/topics/{id}', 'topics.delete', ApiController\Topic\DeleteTopicC
 $route->delete('/topics/batch/{ids}', 'topics.batchDelete', ApiController\Topic\BatchDeleteTopicController::class);
 $route->patch('/topics/{id}', 'topics.update', ApiController\Topic\UpdateTopicController::class);
 $route->patch('/topics/batch/{ids}', 'topics.batchUpdate', ApiController\Topic\BatchUpdateTopicController::class);
+
 /*
 |--------------------------------------------------------------------------
 | System
@@ -358,3 +392,11 @@ $route->get('/offiaccount/menu', 'offiaccount.menu.list', ApiController\Wechat\O
 $route->post('/offiaccount/menu', 'offiaccount.menu.batchCreate', ApiController\Wechat\OffIAccountMenuBatchCreateController::class);
 $route->get('/offiaccount/reprint/{id}', 'offiaccount.threads.reprint', ApiController\Wechat\OffIAccountThreadsReprintController::class);
 $route->get('/offiaccount/transform', 'offiaccount.threads.transform', ApiController\Wechat\OffIAccountThreadsTransformController::class);
+
+
+/*
+|--------------------------------------------------------------------------
+| Cache
+|--------------------------------------------------------------------------
+*/
+$route->delete('/cache', 'cache.clear', ApiController\Cache\CacheController::class);

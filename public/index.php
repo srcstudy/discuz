@@ -1,7 +1,5 @@
 <?php
-//echo 'fuck';
-// ini_set("display_errors","On");
-// error_reporting(E_ALL|E_STRICT);
+
 /*
  * Copyright (C) 2020 Tencent Cloud.
  *
@@ -27,20 +25,3 @@ $app = new Discuz\Foundation\Application(dirname(__DIR__));
 $app->singleton(Discuz\Http\Server::class, Discuz\Http\Server::class);
 
 $app->make(Discuz\Http\Server::class)->listen();
-
-//正式环境直接return;
-function echoDebug($msg){
-	logf($msg);
-	return;
-	echo '<pre>';
-	print_r($msg);
-	echo '</pre>';	
-}
-
-function logf($msg){
-	$fp = fopen( __DIR__ ."/log.txt", "a+");//读写方式打开，将文件指针指向文件末尾。如果文件不存在则尝试创建之。
-	$time = date('Y-m-d H:i:s'); 
-	fwrite($fp, $time.'  '.$msg."\r\n");//记得a+w
-	fclose($fp);	
-	
-}

@@ -31,6 +31,7 @@ use Discuz\Auth\AssertPermissionTrait;
 use Discuz\Auth\Exception\PermissionDeniedException;
 use Discuz\Foundation\EventsDispatchTrait;
 use Exception;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Arr;
@@ -117,6 +118,7 @@ class CreatePost
      * @throws PermissionDeniedException
      * @throws Exception
      * @throws ValidationException
+     * @throws GuzzleException
      */
     public function handle(Dispatcher $events, ThreadRepository $threads, PostValidator $validator, Censor $censor, Post $post)
     {
@@ -126,16 +128,9 @@ class CreatePost
 
         $isFirst = empty($thread->post_count);
 
-        $isComment = (bool) Arr::get($this->data, 'attributes.isComment');
-
         if (! $isFirst) {
             // 非首帖，检查是否有权回复
             $this->assertCan($this->actor, 'reply', $thread);
-
-            // 是否有权发布音频
-            if (Arr::get($this->data, 'attributes.file_id', '')) {
-                $this->assertCan($this->actor, 'createAudio');
-            }
 
             // 回复他人
             if (! empty($this->replyPostId)) {
@@ -149,22 +144,18 @@ class CreatePost
                     throw new ModelNotFoundException;
                 }
             }
-
-            // 敏感词校验
-            $content = $censor->checkText(Arr::get($this->data, 'attributes.content'));
-            Arr::set($this->data, 'attributes.content', $content);
         }
 
         $post = $post->reply(
             $thread->id,
-            trim(Arr::get($this->data, 'attributes.content')),
+            trim($censor->checkText(Arr::get($this->data, 'attributes.content'))),
             $this->actor->id,
             $this->ip,
             $this->port,
             $this->replyPostId,
             $this->replyUserId,
             $isFirst,
-            $isComment
+            (bool) Arr::get($this->data, 'attributes.isComment')
         );
 
         // 存在审核敏感词时，将回复内容放入待审核

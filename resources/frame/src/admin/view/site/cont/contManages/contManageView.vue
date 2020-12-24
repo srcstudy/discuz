@@ -97,7 +97,7 @@
             v-model="checkAll"
             @change="handleCheckAllChange"
           ></el-checkbox>
-          <p class="cont-manage-theme__table-header__title">{{ topic ? `话题 #${topic.content}#` : ''}} 主题列表</p>
+          <p class="cont-manage-theme__table-header__title" style=" margin-left: 30PX;">{{ topic ? `话题 #${topic.content}#` : ''}} 主题列表</p>
         </div>
 
         <ContArrange
@@ -123,7 +123,7 @@
             slot="longText"
             class="cont-manage-theme__table-long-text"
             v-if="items._data.type === 1"
-            :href="'/pages/topic/index?id=' + items._data.id"
+            :href="'/topic/index?id=' + items._data.id"
             target="_blank"
           >
             {{items._data.title}}
@@ -136,7 +136,7 @@
           <div class="cont-manage-theme__table-main" slot="main">
             <a
               class="cont-manage-theme__table-main__cont-text"
-              :href="'/pages/topic/index?id=' + items._data.id"
+              :href="'/topic/index?id=' + items._data.id"
               target="_blank"
               :style="{'display':(items.threadVideo ? 'inline':'block')}"
               v-html="items.firstPost._data.contentHtml"
@@ -223,6 +223,14 @@
             >
               <el-radio :label="1">精华</el-radio>
               <el-radio :label="2">取消精华</el-radio>
+            </el-radio-group>
+            <el-radio-group
+              class="cont-manage__option-select"
+              v-if="scope.row.name === '批量推送到付费首页'"
+              v-model="siteRadio"
+            >
+              <el-radio :label="1">推送</el-radio>
+              <el-radio :label="2">取消推送</el-radio>
             </el-radio-group>
           </template>
         </el-table-column>

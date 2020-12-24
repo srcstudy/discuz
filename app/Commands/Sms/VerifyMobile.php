@@ -24,18 +24,22 @@ use App\Api\Serializer\UserSerializer;
 use App\Commands\Users\GenJwtToken;
 use App\Commands\Users\RegisterPhoneUser;
 use App\Events\Users\Logind;
+use App\Exceptions\NoUserException;
 use App\Exceptions\TranslatorException;
-use App\MessageTemplate\Wechat\WechatRegisterMessage;
 use App\Models\MobileCode;
+use App\Models\SessionToken;
 use App\Models\User;
 use App\Models\UserWalletFailLogs;
+use App\Notifications\Messages\Wechat\RegisterWechatMessage;
 use App\Notifications\System;
 use App\Repositories\MobileCodeRepository;
 use App\User\Bind;
 use App\Validators\UserValidator;
 use Discuz\Api\Client;
+use Discuz\Auth\Exception\PermissionDeniedException;
 use Discuz\Contracts\Setting\SettingsRepository;
 use Discuz\Foundation\EventsDispatchTrait;
+use Exception;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as Events;
 use Illuminate\Support\Arr;
@@ -64,6 +68,7 @@ class VerifyMobile
 
     protected $events;
 
+    /** @var Bind */
     protected $bind;
 
     protected $settings;
@@ -90,11 +95,17 @@ class VerifyMobile
 
     /**
      * @return mixed
+     * @throws PermissionDeniedException
+     * @throws NoUserException
      */
     protected function login()
     {
         //register new user
-        if (is_null($this->mobileCode->user)) {
+        if (is_null($this->mobileCode->user) && Arr::get($this->params, 'register', 0)) {
+            if (!(bool)$this->settings->get('register_close')) {
+                throw new PermissionDeniedException('register_close');
+            }
+
             $data['register_ip'] = Arr::get($this->params, 'ip');
             $data['register_port'] = Arr::get($this->params, 'port');
             $data['mobile'] = $this->mobileCode->mobile;
@@ -103,14 +114,23 @@ class VerifyMobile
                 new RegisterPhoneUser($this->actor, $data)
             );
             $this->mobileCode->setRelation('user', $user);
+        } elseif (is_null($this->mobileCode->user) && !Arr::get($this->params, 'register', 0)) {
+            //没用户且不需要自动注册 抛出异常
+            $token = SessionToken::generate('mobile', [$this->mobileCode->mobile], null, 3600);
+            $token->save();
+
+            $noUserException = new NoUserException();
+            $noUserException->setCode('not_found_user'); // 未查询到用户信息
+            $noUserException->setToken($token);
+            throw $noUserException;
         }
 
         //公众号绑定
         if ($token = Arr::get($this->params, 'token')) {
             $this->bind->withToken($token, $this->mobileCode->user);
             if (!(bool)$this->settings->get('register_validate')) {
-                // 在注册绑定微信后 发送注册微信通知
-                $this->mobileCode->user->notify(new System(WechatRegisterMessage::class));
+                // Tag 发送通知 （在注册绑定微信后 发送注册微信通知）
+                $this->mobileCode->user->notify(new System(RegisterWechatMessage::class, $this->mobileCode->user, ['send_type' => 'wechat']));
             }
         }
 
@@ -119,7 +139,7 @@ class VerifyMobile
         $iv = Arr::get($this->params, 'iv');
         $encryptedData = Arr::get($this->params, 'encryptedData');
         if ($js_code && $iv && $encryptedData) {
-            $this->bind->bindMiniprogram($js_code, $iv, $encryptedData, $this->mobileCode->user);
+            $this->bind->bindMiniprogram($js_code, $iv, $encryptedData, null, $this->mobileCode->user);
         }
 
 
@@ -140,6 +160,10 @@ class VerifyMobile
         return json_decode($response->getBody());
     }
 
+    /**
+     * @return User|mixed
+     * @throws Exception
+     */
     protected function bind()
     {
         $mobile = $this->mobileCode->mobile;
@@ -165,7 +189,7 @@ class VerifyMobile
         $this->controller->serializer = UserSerializer::class;
         if ($this->actor->exists) {
             // 删除验证身份的验证码
-            MobileCode::where('mobile', $this->actor->getRawOriginal('mobile'))
+            MobileCode::query()->where('mobile', $this->actor->getRawOriginal('mobile'))
                 ->where('type', 'verify')
                 ->where('state', 1)
                 ->where('updated_at', '<', Carbon::now()->addMinutes(10))

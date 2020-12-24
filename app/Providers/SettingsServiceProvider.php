@@ -21,12 +21,9 @@ namespace App\Providers;
 use App\Api\Serializer\AttachmentSerializer;
 use App\Commands\Attachment\AttachmentUploader;
 use App\Listeners\Setting\SettingListener;
-use App\Models\Invite;
 use App\Models\Setting;
 use App\Observer\UserWechatObserver;
 use App\Settings\SettingsRepository;
-use App\Tools\AttachmentUploadTool;
-use App\Tools\ImageUploadTool;
 use App\User\AvatarUploader;
 use Discuz\Contracts\Setting\SettingsRepository as ContractsSettingsRepository;
 use Discuz\Foundation\Application;
@@ -48,7 +45,6 @@ class SettingsServiceProvider extends ServiceProvider
     public function boot()
     {
         Setting::setEncrypt($this->app->make(Encrypter::class));
-        Invite::setEncrypt($this->app->make(Encrypter::class));
 
         // 必须设置完加解密函数之后才能调用
         if ($this->app->isInstall()) {
@@ -65,8 +61,6 @@ class SettingsServiceProvider extends ServiceProvider
 
             $this->app->when([
                 AttachmentUploader::class,
-                AttachmentUploadTool::class,
-                ImageUploadTool::class,
                 AttachmentSerializer::class,
             ])
             ->needs(ContractsFilesystem::class)

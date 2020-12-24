@@ -114,6 +114,13 @@ class EditCategory
             $category->property = $attributes['property'];
         }
 
+        if (isset($attributes['moderators'])) {
+            $category->moderators = User::query()
+                ->where('status', 0)
+                ->whereIn('moderators', is_array($attributes['moderators']) ?: explode(',', $attributes['moderators']))
+                ->pluck('id');
+        }
+
         $this->events->dispatch(
             new Saving($category, $this->actor, $this->data)
         );

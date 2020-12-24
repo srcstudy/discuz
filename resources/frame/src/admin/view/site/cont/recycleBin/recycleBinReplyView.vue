@@ -91,14 +91,14 @@
             </el-radio-group>
           </div>
 
-          <!--<a slot="longText" class="recycle-bin-reply-table__long-text" v-if="items.thread._data.isLongArticle" :href="'/pages/topic/index?id=' + items._data.id" >
+          <!--<a slot="longText" class="recycle-bin-reply-table__long-text" v-if="items.thread._data.isLongArticle" :href="'/topic/index?id=' + items._data.id" >
             {{items.thread._data.title}}
             <span  class="iconfont" :class="parseInt(items.thread._data.price) > 0?'iconmoney':'iconchangwen'" ></span>
           </a>-->
 
           <div class="recycle-bin-reply-table__main" slot="main">
-            <!--<a :href="'/pages/topic/index?id=' + items._data.id" style="color: #333333;" target="_blank" v-html="items._data.contentHtml"></a>-->
-            <a class="recycle-bin-reply-table__main__cont-text" :href="'/pages/topic/index?id=' + items.thread._data.id" target="_blank" v-html="items._data.contentHtml"></a>
+            <!--<a :href="'/topic/index?id=' + items._data.id" style="color: #333333;" target="_blank" v-html="items._data.contentHtml"></a>-->
+            <a class="recycle-bin-reply-table__main__cont-text" :href="'/topic/index?id=' + items.thread._data.id" target="_blank" v-html="items._data.contentHtml"></a>
             <div class="recycle-bin-reply-table__main__cont-imgs">
               <p class="recycle-bin-reply-table__main__cont-imgs-p" v-for="(item,index) in items.images" :key="index">
                 <img  v-lazy="item._data.thumbUrl" @click="imgShowClick(items.images,index)" :alt="item._data.fileName">
@@ -140,7 +140,31 @@
       <div class="recycle-bin-reply-footer footer-btn">
         <el-button size="small" :loading="subLoading" type="primary" @click="submitClick">提交</el-button>
         <el-button type="text" :loading="btnLoading === 1" @click="allOperationsSubmit(1)">全部还原</el-button>
-        <el-button type="text" :loading="btnLoading === 2" @click="allOperationsSubmit(2)">全部删除</el-button>
+            <el-popover
+              width="100"
+              placement="top"
+              v-model="visible"
+            >
+              <p>确定删除该项吗？</p>
+              <div style="text-align: right; margin: 10PX 0 0 0 ">
+                <el-button
+                  type="danger"
+                  size="mini"
+                  @click="visible = false"
+                >
+                  取消
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="mini"
+                  @click="
+                    allOperationsSubmit(2)
+                    visible = false"
+                  >确定</el-button
+                >
+              </div>
+        <el-button slot="reference" type="text" :loading="btnLoading === 2">全部删除</el-button>
+            </el-popover>
         <!-- <el-checkbox v-model="appleAll">将操作应用到其他所有页面</el-checkbox> -->
       </div>
 

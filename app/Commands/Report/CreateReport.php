@@ -24,7 +24,6 @@ use App\Models\User;
 use App\Validators\ReportValidator;
 use Discuz\Auth\AssertPermissionTrait;
 use Discuz\Auth\Exception\NotAuthenticatedException;
-use Discuz\Auth\Exception\PermissionDeniedException;
 use Discuz\Foundation\EventsDispatchTrait;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Arr;
@@ -64,7 +63,6 @@ class CreateReport
      * @param ReportValidator $validator
      * @return Report
      * @throws NotAuthenticatedException
-     * @throws PermissionDeniedException
      * @throws ValidationException
      */
     public function handle(Dispatcher $events, ReportValidator $validator)
@@ -73,7 +71,6 @@ class CreateReport
         $data = $this->data;
 
         $this->assertRegistered($this->actor);
-        $this->assertCan($this->actor, 'createCategory');
 
         $userId = Arr::get($data, 'attributes.user_id');
         $threadId = Arr::get($data, 'attributes.thread_id', 0);
@@ -91,10 +88,15 @@ class CreateReport
             'user_id' => $userId,
             'thread_id' => $threadId,
             'post_id' => $postId,
+            'status' => 0
         ])->exists();
 
         if ($exists) {
-            // 合并理由
+            /**
+             * 合并理由
+             *
+             * @var Report $report
+             */
             $report = $query->first();
             $report->reason = $report->reason .= '、' . $reason;
         } else {

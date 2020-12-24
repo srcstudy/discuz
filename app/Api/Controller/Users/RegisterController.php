@@ -22,7 +22,7 @@ use App\Api\Serializer\TokenSerializer;
 use App\Commands\Users\GenJwtToken;
 use App\Commands\Users\RegisterUser;
 use App\Events\Users\RegisteredCheck;
-use App\MessageTemplate\Wechat\WechatRegisterMessage;
+use App\Notifications\Messages\Wechat\RegisterWechatMessage;
 use App\Notifications\System;
 use App\Repositories\UserRepository;
 use App\User\Bind;
@@ -72,7 +72,9 @@ class RegisterController extends AbstractCreateController
      */
     protected function data(ServerRequestInterface $request, Document $document)
     {
-        $this->assertPermission((bool)$this->settings->get('register_close'));
+        if (!(bool)$this->settings->get('register_close')) {
+            throw new PermissionDeniedException('register_close');
+        }
 
         $attributes = Arr::get($request->getParsedBody(), 'data.attributes', []);
         $attributes['register_ip'] = ip($request->getServerParams());
@@ -82,13 +84,15 @@ class RegisterController extends AbstractCreateController
             new RegisterUser($request->getAttribute('actor'), $attributes)
         );
 
+        $rebind = Arr::get($attributes, 'rebind', 0);
+
         //绑定公众号
         if ($token = Arr::get($attributes, 'token')) {
-            $this->bind->withToken($token, $user);
+            $this->bind->withToken($token, $user, $rebind);
             // 判断是否开启了注册审核
             if (!(bool)$this->settings->get('register_validate')) {
-                // 在注册绑定微信后 发送注册微信通知
-                $user->notify(new System(WechatRegisterMessage::class));
+                // Tag 发送通知 (在注册绑定微信后 发送注册微信通知)
+                $user->notify(new System(RegisterWechatMessage::class, $user, ['send_type' => 'wechat']));
             }
         }
 
@@ -97,13 +101,15 @@ class RegisterController extends AbstractCreateController
         $iv = Arr::get($attributes, 'iv');
         $encryptedData = Arr::get($attributes, 'encryptedData');
         if ($js_code && $iv  && $encryptedData) {
-            $this->bind->bindMiniprogram($js_code, $iv, $encryptedData, $user);
+            $this->bind->bindMiniprogram($js_code, $iv, $encryptedData, $rebind, $user);
         }
 
-        if ($mobile = Arr::get($attributes, 'mobile')) {
-            $this->bind->mobile($mobile, $user);
+        //绑定手机号
+        if ($mobileToken = Arr::get($attributes, 'mobileToken')) {
+            $this->bind->mobile($mobileToken, $user);
         }
 
+        // 注册后的登录检查
         $this->events->dispatch(new RegisteredCheck($user));
 
         $response = $this->bus->dispatch(

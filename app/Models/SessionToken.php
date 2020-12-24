@@ -30,11 +30,14 @@ use Illuminate\Support\Str;
  * @property string $payload
  * @property Carbon $created_at
  * @property Carbon $expired_at
- * @package App\Models
- * @method static where(...$params)
+ * @property User|null $user
  */
 class SessionToken extends Model
 {
+    const WECHAT_PC_LOGIN = 'wechat_pc_login'; // 微信 PC 扫码登陆
+
+    const WECHAT_PC_BIND = 'wechat_pc_bind'; // 微信 PC 绑定
+
     /**
      * {@inheritdoc}
      */
@@ -45,6 +48,9 @@ class SessionToken extends Model
      */
     public $timestamps = false;
 
+    /**
+     * {@inheritdoc}
+     */
     protected $fillable = ['user_id', 'payload'];
 
     /**
@@ -87,13 +93,14 @@ class SessionToken extends Model
 
     /**
      * @param string $token
-     * @param string $scope
+     * @param string|null $scope
      * @param int|null $userId
      * @return bool
      */
     public static function check(string $token, string $scope = null, int $userId = null)
     {
-        return self::where('token', $token)
+        return self::query()
+            ->where('token', $token)
             ->when($scope, function (Builder $query, $scope) {
                 $query->where('scope', $scope);
             })
@@ -104,7 +111,7 @@ class SessionToken extends Model
 
     /**
      * @param string $token
-     * @param string $scope
+     * @param string|null $scope
      * @param int|null $userId
      * @return SessionToken
      */

@@ -18,7 +18,9 @@
 
 namespace App\Api\Serializer;
 
+use App\Models\Category;
 use Discuz\Api\Serializer\AbstractSerializer;
+use Tobscure\JsonApi\Relationship;
 
 class CategorySerializer extends AbstractSerializer
 {
@@ -28,7 +30,8 @@ class CategorySerializer extends AbstractSerializer
     protected $type = 'categories';
 
     /**
-     * {@inheritdoc}
+     * @param Category $model
+     * @return array
      */
     protected function getDefaultAttributes($model)
     {
@@ -36,15 +39,22 @@ class CategorySerializer extends AbstractSerializer
             'name'              => $model->name,
             'description'       => $model->description,
             'icon'              => $model->icon,
-            'sort'              => $model->sort,
-            'property'          => $model->property,
+            'sort'              => (int) $model->sort,
+            'property'          => (int) $model->property,
             'thread_count'      => (int) $model->thread_count,
             'ip'                => $model->ip,
             'created_at'        => $this->formatDate($model->created_at),
             'updated_at'        => $this->formatDate($model->updated_at),
-            'canViewThreads'    => $this->actor->can('viewThreads', $model),
             'canCreateThread'   => $this->actor->can('createThread', $model),
-            'canReplyThread'    => $this->actor->can('replyThread', $model),
         ];
+    }
+
+    /**
+     * @param Category $category
+     * @return Relationship
+     */
+    protected function moderators($category)
+    {
+        return $this->hasMany($category, UserSerializer::class, 'moderatorUsers');
     }
 }

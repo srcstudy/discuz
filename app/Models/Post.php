@@ -18,13 +18,14 @@
 
 namespace App\Models;
 
+use App\Common\CacheKey;
 use App\Events\Post\Hidden;
 use App\Events\Post\Restored;
 use App\Events\Post\Revised;
 use App\Formatter\Formatter;
-use App\Formatter\MarkdownFormatter;
 use Carbon\Carbon;
 use DateTime;
+use Discuz\Common\Utils;
 use Discuz\Database\ScopeVisibilityTrait;
 use Discuz\Foundation\EventGeneratorTrait;
 use Discuz\SpecialChar\SpecialCharServer;
@@ -57,6 +58,7 @@ use Illuminate\Support\Str;
  * @property bool $is_comment
  * @property bool $is_approved
  * @property Collection $images
+ * @property Collection $attachments
  * @property Thread $thread
  * @property User $user
  * @property User $replyUser
@@ -126,13 +128,6 @@ class Post extends Model
     protected static $formatter;
 
     /**
-     * The markdown text formatter instance.
-     *
-     * @var MarkdownFormatter
-     */
-    protected static $markdownFormatter;
-
-    /**
      * datetime 时间转换
      *
      * @param $timeAt
@@ -171,11 +166,13 @@ class Post extends Model
      */
     public function getSummaryTextAttribute()
     {
-        $content = strip_tags($this->formatContent());
+        $content = Str::of(strip_tags($this->formatContent()));
 
-        return $content
-            ? Str::of($content)->substr(0, self::SUMMARY_LENGTH)->finish(self::SUMMARY_END_WITH)->__toString()
-            : '';
+        if ($content->length() > self::SUMMARY_LENGTH) {
+            $content = $content->substr(0, self::SUMMARY_LENGTH)->finish(self::SUMMARY_END_WITH);
+        }
+
+        return $content->__toString();
     }
 
     /**
@@ -186,11 +183,7 @@ class Post extends Model
      */
     public function getContentAttribute($value)
     {
-        if ($this->is_first && $this->thread->type === Thread::TYPE_OF_LONG) {
-            return static::$markdownFormatter->unparse($value);
-        } else {
-            return static::$formatter->unparse($value);
-        }
+        return static::$formatter->unparse($value);
     }
 
     /**
@@ -210,11 +203,18 @@ class Post extends Model
      */
     public function setContentAttribute($value)
     {
-        if ($this->is_first && $this->thread->type === Thread::TYPE_OF_LONG) {
-            $this->attributes['content'] = strlen($value) ? static::$markdownFormatter->parse($value, $this) : null;
-        } else {
-            $this->attributes['content'] = strlen($value) ? static::$formatter->parse($value, $this) : null;
+        if (blank($value) && $this->is_first) {
+            $defaultContent = [
+                Thread::TYPE_OF_VIDEO => trans('post.default_content.video'),
+                Thread::TYPE_OF_IMAGE => trans('post.default_content.image'),
+                Thread::TYPE_OF_AUDIO => trans('post.default_content.audio'),
+                Thread::TYPE_OF_GOODS => trans('post.default_content.goods'),
+            ];
+
+            $value = $defaultContent[$this->thread->type] ?? '';
         }
+
+        $this->attributes['content'] = $value ? static::$formatter->parse($value, $this) : null;
     }
 
     /**
@@ -234,15 +234,11 @@ class Post extends Model
      */
     public function formatContent()
     {
-        $content = $this->attributes['content'] ?: '';
-
-        if ($this->is_first && $this->thread->type === Thread::TYPE_OF_LONG) {
-            $content = $content ? static::$markdownFormatter->render($content) : '';
-        } else {
-            $content = $content ? static::$formatter->render($content) : '';
+        if (empty($this->attributes['content'])) {
+            return $this->attributes['content'];
         }
 
-        return $content;
+        return static::$formatter->render($this->attributes['content']);
     }
 
     /**
@@ -346,9 +342,11 @@ class Post extends Model
     public function revise($content, User $actor)
     {
         if ($this->content !== $content) {
+            $rawContent = $this->content;
+
             $this->content = $content;
 
-            $this->raise(new Revised($this, $actor));
+            $this->raise(new Revised($this, $rawContent, $actor));
         }
 
         return $this;
@@ -502,7 +500,7 @@ class Post extends Model
     }
 
     /**
-     * Define the relationship with the post's attachments.
+     * Define the relationship with the post's images.
      *
      * @return HasMany
      */
@@ -540,6 +538,13 @@ class Post extends Model
     }
 
     /**
+     * @return HasOne
+     */
+    public function postGoods()
+    {
+        return $this->hasOne(PostGoods::class);
+    }
+    /**
      * Set the user for which the state relationship should be loaded.
      *
      * @param User $user
@@ -560,16 +565,6 @@ class Post extends Model
     }
 
     /**
-     * Get the markdown text formatter instance.
-     *
-     * @return MarkdownFormatter
-     */
-    public static function getMarkdownFormatter()
-    {
-        return static::$markdownFormatter;
-    }
-
-    /**
      * Set the text formatter instance.
      *
      * @param Formatter $formatter
@@ -578,14 +573,29 @@ class Post extends Model
     {
         static::$formatter = $formatter;
     }
-
-    /**
-     * Set the markdown text formatter instance.
-     *
-     * @param MarkdownFormatter $formatter
-     */
-    public static function setMarkdownFormatter(MarkdownFormatter $formatter)
+    public function save(array $options = [])
     {
-        static::$markdownFormatter = $formatter;
+        $this->removePostCache();
+        return parent::save($options); // TODO: Change the autogenerated stub
     }
+    public function delete()
+    {
+        $this->removePostCache();
+        return parent::delete(); // TODO: Change the autogenerated stub
+    }
+    public function update(array $attributes = [], array $options = [])
+    {
+        $this->removePostCache();
+        return parent::update($attributes, $options); // TODO: Change the autogenerated stub
+    }
+
+    private function removePostCache()
+    {
+        $threadId = $this->thread_id;
+        $cacheKey0 = CacheKey::POST_RESOURCE_BY_ID . '0' . $threadId;
+        $cacheKey1 = CacheKey::POST_RESOURCE_BY_ID . '1' . $threadId;
+        $cache = app('cache');
+        return $cache->delete($cacheKey0) || $cache->delete($cacheKey1);
+    }
+
 }

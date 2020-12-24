@@ -18,17 +18,14 @@
 
 namespace App\Commands\Thread;
 
-use App\Models\Post;
 use App\Models\Thread;
 use App\Models\ThreadVideo;
 use App\Models\User;
 use App\Settings\SettingsRepository;
 use Discuz\Auth\AssertPermissionTrait;
-use Discuz\Auth\Exception\PermissionDeniedException;
 use Discuz\Foundation\EventsDispatchTrait;
 use Discuz\Qcloud\QcloudTrait;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 
 class CreateThreadVideo
@@ -37,17 +34,20 @@ class CreateThreadVideo
     use EventsDispatchTrait;
     use QcloudTrait;
 
-    const API_URL = 'vod.tencentcloudapi.com';
-
     /**
      * @var User
      */
     public $actor;
 
     /**
-     * @var Thread|Post
+     * @var Thread
      */
-    public $model;
+    public $thread;
+
+    /**
+     * @var int
+     */
+    public $type;
 
     /**
      * @var array
@@ -61,13 +61,15 @@ class CreateThreadVideo
 
     /**
      * @param User $actor
-     * @param Model $model
+     * @param Thread $thread
+     * @param int $type
      * @param array $data
      */
-    public function __construct(User $actor, Model $model, array $data)
+    public function __construct(User $actor, Thread $thread, int $type, array $data)
     {
         $this->actor = $actor;
-        $this->model = $model;
+        $this->thread = $thread;
+        $this->type = $type;
         $this->data = $data;
     }
 
@@ -75,48 +77,38 @@ class CreateThreadVideo
      * @param EventDispatcher $events
      * @param SettingsRepository $settings
      * @return ThreadVideo
-     * @throws PermissionDeniedException
      */
     public function handle(EventDispatcher $events, SettingsRepository $settings)
     {
         $this->events = $events;
         $this->settings = $settings;
 
-        $fileId = Arr::get($this->data, 'attributes.file_id', '');
+        $attributes = Arr::get($this->data, 'attributes', []);
+
+        $fileId = Arr::get($attributes, 'file_id', '');
 
         /** @var ThreadVideo $threadVideo */
         $threadVideo = ThreadVideo::query()->where('thread_id', 0)->where('file_id', $fileId)->firstOrNew();
 
-        /**
-         * 传入 Thread 时，则视为发视频
-         * 传入 Post 时，则视为发音频
-         * 如果改需求，建议改为构造方法中传入 type
-         */
-        if ($this->model instanceof Thread) {
-            $thread = $this->model;
-            $post = new Post;
-            $type = ThreadVideo::TYPE_OF_VIDEO;
-        } elseif ($this->model instanceof Post) {
-            $thread = $this->model->thread;
-            $post = $this->model;
-            $type = ThreadVideo::TYPE_OF_AUDIO;
-        } else {
-            throw new PermissionDeniedException();
-        }
-
         $threadVideo->user_id = $this->actor->id;
-        $threadVideo->thread_id = $thread->id ?? 0;
-        $threadVideo->post_id = $post->id ?? 0;
-        $threadVideo->type = $type;
-        $threadVideo->status = ThreadVideo::VIDEO_STATUS_TRANSCODING;
+        $threadVideo->thread_id = $this->thread->id ?? 0;
+        $threadVideo->post_id = 0;  // 暂时用不到了
+        $threadVideo->type = $this->type;
         $threadVideo->file_id = $fileId;
-        $threadVideo->file_name = Arr::get($this->data, 'attributes.file_name', '');
-        $threadVideo->media_url = Arr::get($this->data, 'attributes.media_url', '');
-        $threadVideo->cover_url = Arr::get($this->data, 'attributes.cover_url', '');
+        $threadVideo->file_name = Arr::get($attributes, 'file_name', $threadVideo->file_name ?? '');
+        $threadVideo->media_url = Arr::get($attributes, 'media_url', $threadVideo->media_url ?? '');
+        $threadVideo->cover_url = Arr::get($attributes, 'cover_url', $threadVideo->cover_url ?? '');
+
+        // 视频转码中，音频无需转码
+        if ($threadVideo->type === ThreadVideo::TYPE_OF_VIDEO) {
+            $threadVideo->status = ThreadVideo::VIDEO_STATUS_TRANSCODING;
+        } else {
+            $threadVideo->status = ThreadVideo::VIDEO_STATUS_SUCCESS;
+        }
 
         $threadVideo->save();
 
-        if ($type === ThreadVideo::TYPE_OF_VIDEO && $thread->exists) {
+        if ($threadVideo->type === ThreadVideo::TYPE_OF_VIDEO && $this->thread->exists) {
             // 发布文章时，转码
             $this->transcodeVideo($threadVideo->file_id, 'TranscodeTaskSet');
 

@@ -20,9 +20,12 @@ namespace App\Commands\Attachment;
 
 use App\Models\Attachment;
 use Carbon\Carbon;
+use Discuz\Contracts\Setting\SettingsRepository;
 use Discuz\Filesystem\CosAdapter;
+use Illuminate\Contracts\Filesystem\Factory;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 
 class AttachmentUploader
 {
@@ -32,6 +35,11 @@ class AttachmentUploader
     protected $filesystem;
 
     /**
+     * @var SettingsRepository
+     */
+    protected $settings;
+
+    /**
      * @var UploadedFile
      */
     public $file;
@@ -39,7 +47,12 @@ class AttachmentUploader
     /**
      * @var string
      */
-    protected $path = 'public/attachments';
+    public $fileName;
+
+    /**
+     * @var string
+     */
+    protected $path = 'public/attachments/';
 
     /**
      * @var array
@@ -60,12 +73,14 @@ class AttachmentUploader
 
     /**
      * @param Filesystem $filesystem
+     * @param SettingsRepository $settings
      */
-    public function __construct(Filesystem $filesystem)
+    public function __construct(Filesystem $filesystem, SettingsRepository $settings)
     {
         $this->filesystem = $filesystem;
+        $this->settings = $settings;
 
-        $this->path = $this->path . date('/Y/m/d/');
+        $this->path = $this->getPath() . date('Y/m/d/');
     }
 
     /**
@@ -77,12 +92,30 @@ class AttachmentUploader
     {
         $this->file = $file;
 
-        /**
-         * 如果类型是 1（帖子图片）并且使用云存储，就使用云上数据处理，生成高斯模糊图。
-         * @see https://cloud.tencent.com/document/product/460/18147#.E4.BA.91.E4.B8.8A.E6.95.B0.E6.8D.AE.E5.A4.84.E7.90.86
-         */
-        $fileName = $this->file->hashName();
-        $this->put($type, $this->file, $fileName, $this->path, $options);
+        $this->fileName = Str::random(40) . '.' . $this->file->getClientOriginalExtension();
+
+        $this->put($type, $this->file, $this->fileName, $this->path, $options);
+    }
+
+    public function delete(Attachment $attachment)
+    {
+        /** @var Factory $filesystem */
+        $filesystem = app(Factory::class);
+
+        $filesystem = $filesystem->disk($attachment->is_remote ? 'attachment_cos' : 'attachment');
+
+        $filesystem->delete($attachment->full_path);
+
+        // 帖子图片
+        if ($attachment->type === Attachment::TYPE_OF_IMAGE) {
+            // 删除缩略图
+            if (! $attachment->is_remote) {
+                $filesystem->delete($attachment->thumb_path);
+            }
+
+            // 删除高斯模糊图
+            $filesystem->delete($attachment->blur_path);
+        }
     }
 
     /**
@@ -97,6 +130,10 @@ class AttachmentUploader
     {
         $path = $path ?: $this->path;
 
+        /**
+         * 如果类型是 1（帖子图片）并且使用云存储，就使用云上数据处理，生成高斯模糊图。
+         * @see https://cloud.tencent.com/document/product/460/18147#.E4.BA.91.E4.B8.8A.E6.95.B0.E6.8D.AE.E5.A4.84.E7.90.86
+         */
         if ($type === Attachment::TYPE_OF_IMAGE && $this->isRemote()) {
             [$hash, $extension] = explode('.', $fileName);
 
@@ -113,8 +150,7 @@ class AttachmentUploader
                 ]
             ], $options);
         }
-
-        $this->filesystem->put($path, $file, $options);
+        $this->filesystem->putFileAs($path, $file, $fileName, $options);
     }
 
     /**
@@ -122,7 +158,24 @@ class AttachmentUploader
      */
     public function getPath()
     {
-        return $this->path;
+        return rtrim($this->path, '/') . '/';
+    }
+
+    /**
+     * @param $path
+     * @return string
+     */
+    public function setPath($path)
+    {
+        return rtrim($path, '/') . '/';
+    }
+
+    /**
+     * @return string
+     */
+    public function getFullPath()
+    {
+        return $this->getPath() . $this->fileName;
     }
 
     /**
@@ -140,14 +193,14 @@ class AttachmentUploader
      */
     public function getUrl()
     {
-        if (!$this->file->hashName()) {
+        if (! $this->fileName) {
             return '';
         }
 
-        $fullPath = $this->file->hashName($this->getPath());
+        $fullPath = $this->getFullPath();
 
-        return $this->isRemote()
-            ? $this->filesystem->temporaryUrl($fullPath, Carbon::now()->addMinutes(15))
+        return $this->isRemote() && (bool) $this->settings->get('qcloud_cos_sign_url', 'qcloud', true)
+            ? $this->filesystem->temporaryUrl($fullPath, Carbon::now()->addDay())
             : $this->filesystem->url($fullPath);
     }
 }

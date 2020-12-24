@@ -4,13 +4,18 @@ import CardRow from "../../../view/site/common/card/cardRow";
 export default {
   data: function() {
     return {
+      // 关闭站点
+      closeList: [],
+      closeSelectList: [],
       radio: "1",
-      radio2: "2",
+      // radio2: "2",
       // fileList:[],
       loading: true,
       fullscreenLoading: false,
       siteName: "",
       siteIntroduction: "",
+      siteKeywords: "",
+      siteTitle: "",
       siteMode: "1", //站点模式选择
       sitePrice: "",
       siteExpire: "",
@@ -29,20 +34,23 @@ export default {
       fileList: [],
       deleBtn: false,
       disabled: true, // 付费模式置灰
+      askPrice: "", // 问答围观价格
+      purchase: false, // 权限购买
+      purchaseNum: 0,
       numberimg: [
         {
           imageUrl: "",
           imgWidht: 0,
           imgHeight: 0,
           text: "站点LOGO",
-          textrule: "推荐高度：88px"
+          textrule: "尺寸：438px*88px"
         },
         {
           imageUrl: "",
           imgWidht: 0,
           imgHeight: 0,
           text: "首页头部LOGO",
-          textrule: "推荐高度：88px"
+          textrule: "尺寸：438px*88px"
         },
         {
           imageUrl: "",
@@ -55,9 +63,9 @@ export default {
           imageUrl: "",
           imgWidht: 0,
           imgHeight: 0,
-          text: "ICON",
+          text: "站点ICON",
           textrule: "尺寸：120px*120px"
-        },
+        }
       ]
     };
   },
@@ -70,6 +78,9 @@ export default {
     // uploadDisabled:function() {
     //     return this.fileList.length >0
     // },
+    changeCloseList() {
+      return this.closeSelectList.length != this.closeList.length;
+    }
   },
 
   methods: {
@@ -84,18 +95,82 @@ export default {
           if (data.errors) {
             this.$message.error(data.errors[0].code);
           } else {
+            console.log("11111");
+            console.log(data)
+            // 微信支付关闭时置灰付费模式
+            if (data.readdata._data.paycenter.wxpay_close == false) {
+              this.disabled = true;
+            } else {
+              this.disabled = false;
+            }
+            //
             this.siteName = data.readdata._data.set_site.site_name;
             this.siteIntroduction =
               data.readdata._data.set_site.site_introduction;
+            this.siteKeywords = data.readdata._data.set_site.site_keywords;
+            this.siteTitle = data.readdata._data.set_site.site_title;
             this.siteMode = data.readdata._data.set_site.site_mode;
             this.numberimg[0].imageUrl = data.readdata._data.set_site.site_logo;
             this.numberimg[1].imageUrl =
               data.readdata._data.set_site.site_header_logo;
             this.numberimg[2].imageUrl =
               data.readdata._data.set_site.site_background_image;
-              // icon
-              this.numberimg[3].imageUrl =
+            // icon
+            this.numberimg[3].imageUrl =
               data.readdata._data.set_site.site_favicon;
+            if (this.siteMode == "pay") {
+              this.radio = "2";
+            } else {
+              this.radio = "1";
+            }
+            this.sitePrice = data.readdata._data.set_site.site_price;
+            this.siteExpire = data.readdata._data.set_site.site_expire;
+            this.siteAuthorScale =
+              data.readdata._data.set_site.site_author_scale;
+            this.siteMasterScale =
+              data.readdata._data.set_site.site_master_scale;
+            // this.siteLogoFile = data.readdata._data.siteLogoFile;
+            this.siteRecord = data.readdata._data.set_site.site_record;
+            this.recodeNumber = data.readdata._data.set_site.site_record_code;
+            this.siteStat = data.readdata._data.set_site.site_stat;
+
+            if (
+              data.readdata._data.set_site.site_author &&
+              data.readdata._data.set_site.site_author.id
+            ) {
+              this.siteMasterId = data.readdata._data.set_site.site_author.id;
+            }
+
+            this.askPrice = data.readdata._data.set_site.site_onlooker_price;
+            // if (data.readdata._data.logo) {
+            //   this.fileList.push({url: data.readdata._data.logo});
+            // }
+
+            // 旧关闭站点
+            // this.siteClose = data.readdata._data.set_site.site_close;
+            // if (this.siteClose === true) {
+            //   this.radio2 = "1";
+            // } else {
+            //   this.radio2 = "2";
+            // }
+            // 新的关闭站点
+
+            this.closeList = data.readdata._data.set_site.site_manage || [];
+            this.closeSelectList = this.closeList.reduce((result, item) => {
+              if (item.value) {
+                result.push(item.key);
+              }
+              return result;
+            }, []);
+
+            this.siteCloseMsg = data.readdata._data.set_site.site_close_msg;
+            this.purchase = !!Number(data.readdata._data.set_site.site_pay_group_close);
+            // 微信支付关闭时置灰付费模式
+            if (data.readdata._data.paycenter.wxpay_close == false) {
+              this.disabled = true;
+            } else {
+              this.disabled = false;
+            }
             this.getScaleImgSize(this.numberimg[0].imageUrl, {
               width: 140,
               height: 140
@@ -119,43 +194,11 @@ export default {
             });
             this.getScaleImgSize(this.numberimg[3].imageUrl, {
               width: 140,
-              height:140
+              height: 140
             }).then(res => {
               this.numberimg[3].imgWidht = res.width;
               this.numberimg[3].imgHeight = res.height;
             });
-            if (this.siteMode == "pay") {
-              this.radio = "2";
-            } else {
-              this.radio = "1";
-            }
-            this.sitePrice = data.readdata._data.set_site.site_price;
-            this.siteExpire = data.readdata._data.set_site.site_expire;
-            this.siteAuthorScale =
-              data.readdata._data.set_site.site_author_scale;
-            this.siteMasterScale =
-              data.readdata._data.set_site.site_master_scale;
-            // this.siteLogoFile = data.readdata._data.siteLogoFile;
-            this.siteRecord = data.readdata._data.set_site.site_record;
-            this.recodeNumber = data.readdata._data.set_site.site_record_code;
-            this.siteStat = data.readdata._data.set_site.site_stat;
-            this.siteClose = data.readdata._data.set_site.site_close;
-            this.siteMasterId = data.readdata._data.set_site.site_author.id;
-            // if (data.readdata._data.logo) {
-            //   this.fileList.push({url: data.readdata._data.logo});
-            // }
-            if (this.siteClose == true) {
-              this.radio2 = "1";
-            } else {
-              this.radio2 = "2";
-            }
-            this.siteCloseMsg = data.readdata._data.set_site.site_close_msg;
-            // 微信支付关闭时置灰付费模式
-            if (data.readdata._data.paycenter.wxpay_close == false) {
-              this.disabled = true;
-            } else {
-              this.disabled = false;
-            }
           }
         })
         .catch(error => {});
@@ -177,7 +220,7 @@ export default {
           type = "favicon";
           break;
         default:
-          this.$message.error('未知类型');
+          this.$message.error("未知类型");
       }
       this.numberimg[index].imageUrl = "";
       this.appFetch({
@@ -210,11 +253,18 @@ export default {
         this.siteClose = false;
       }
     },
+    // 关闭站点
+    closeListChange(data) {
+      this.closeSelectList = data.slice();
+    },
     handleAvatarSuccess(res, file) {
       // this.imageUrl = URL.createObjectURL(file.raw);
     },
     handleFile() {},
     getScaleImgSize(url, obj) {
+      if (url === "") {
+        return;
+      }
       //处理等比例上传图片，
       return new Promise((resolve, reject) => {
         this.getImageSize(url)
@@ -233,19 +283,20 @@ export default {
             }
           })
           .catch(err => {
-            reject(err);
+            console.log(err);
+            // reject(err);
           });
       });
     },
     getImageSize(url) {
       const img = document.createElement("img");
-
       return new Promise((resolve, reject) => {
         img.onload = ev => {
           resolve({ width: img.naturalWidth, height: img.naturalHeight });
         };
         img.src = url;
         img.onerror = reject;
+        console.log(url);
       });
     },
 
@@ -284,7 +335,7 @@ export default {
           type = "favicon";
           break;
         default:
-          this.$message.error('未知类型');
+          this.$message.error("未知类型");
       }
       let logoFormData = new FormData();
       logoFormData.append("logo", e.file);
@@ -300,8 +351,8 @@ export default {
           } else {
             this.numberimg[index].imageUrl = data.readdata._data.default.logo;
             this.getScaleImgSize(this.numberimg[index].imageUrl, {
-              width: 120,
-              height: 120
+              width: 140,
+              height: 140
             }).then(res => {
               this.numberimg[index].imgWidht = res.width;
               this.numberimg[index].imgHeight = res.height;
@@ -311,8 +362,12 @@ export default {
         })
         .catch(error => {});
     },
-    errorFile() {},
     siteSetPost() {
+
+      const closeData = this.closeList.map((item) => {
+        item.value = this.closeSelectList.indexOf(item.key) != - 1;
+        return item;
+      })
       this.appFetch({
         url: "settings",
         method: "post",
@@ -329,6 +384,20 @@ export default {
               attributes: {
                 key: "site_introduction",
                 value: this.siteIntroduction ? this.siteIntroduction : "",
+                tag: "default"
+              }
+            },
+            {
+              attributes: {
+                key: "site_keywords",
+                value: this.siteKeywords ? this.siteKeywords : "",
+                tag: "default"
+              }
+            },
+            {
+              attributes: {
+                key: "site_title",
+                value: this.siteTitle ? this.siteTitle : "",
                 tag: "default"
               }
             },
@@ -395,10 +464,17 @@ export default {
                 tag: "default"
               }
             },
+            // {
+            //   attributes: {
+            //     key: "site_close",
+            //     value: this.siteClose,
+            //     tag: "default"
+            //   }
+            // },
             {
               attributes: {
-                key: "site_close",
-                value: this.siteClose,
+                key: "site_manage",
+                value: closeData,
                 tag: "default"
               }
             },
@@ -408,6 +484,20 @@ export default {
                 value: this.siteCloseMsg,
                 tag: "default"
               }
+            },
+            {
+              attributes: {
+                key: "site_onlooker_price",
+                value: this.askPrice,
+                tag: "default"
+              }
+            },
+            {
+              attributes: {
+                key: "site_pay_group_close",
+                value: this.purchase,
+                tag: "default"
+              }
             }
           ]
         }
@@ -415,7 +505,9 @@ export default {
         .then(data => {
           if (data.errors) {
             if (data.errors[0].detail) {
-              this.$message.error(data.errors[0].code + '\n' + data.errors[0].detail[0])
+              this.$message.error(
+                data.errors[0].code + "\n" + data.errors[0].detail[0]
+              );
             } else {
               this.$message.error(data.errors[0].code);
             }

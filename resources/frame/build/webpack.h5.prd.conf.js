@@ -7,7 +7,7 @@ const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TerserPlugin = require("terser-webpack-plugin");
 const OptimizeCSSPlugin = require("optimize-css-assets-webpack-plugin");
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
-
+const conditionalLoader = require("./conditional.loader.config");
 function resolve(dir) {
   return path.resolve(__dirname, "../" + dir);
 }
@@ -25,7 +25,6 @@ module.exports = {
   mode: "production",
   devtool: false,
   entry: {
-    app: resolve("src/h5-main.js"),
     admin: resolve("src/admin-main.js")
   },
   externals: {
@@ -136,7 +135,8 @@ module.exports = {
           limit: 10000,
           name: "static/img/[name].[hash:7].[ext]"
         }
-      }
+      },
+      conditionalLoader()
     ]
   },
   plugins: [
