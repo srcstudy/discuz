@@ -71,7 +71,12 @@
         <img v-if="logo" :src="logo" class="logo" />
       </div>
 
-
+ <div class="circleDet" v-show="perDetShow" v-if="siteInfo">
+        <span>主题：{{siteInfo._data.other.count_threads}}</span>
+        <span>帖子：{{siteInfo._data.other.count_posts}}</span>
+        <span v-if="siteInfo._data.other.count_users">成员：{{siteInfo._data.other.count_users}}</span>
+        <span v-else>成员：无</span>
+      </div>
 	  
       <div class="navBox" id="testNavBar" :class="{'fixedNavBar': isfixNav}" v-show="navShow">
         <van-tabs v-model="navActi">
