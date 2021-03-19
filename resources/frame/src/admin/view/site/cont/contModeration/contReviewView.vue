@@ -40,14 +40,20 @@
               :value="item.value"
             ></el-option>
           </el-select>
-          <el-select v-model="categoriesListSelect" size="medium" clearable placeholder="选择搜索分类">
+          <!-- <el-select v-model="categoriesListSelect" size="medium" clearable placeholder="选择搜索分类">
             <el-option
               v-for="item in categoriesList"
               :key="item.id"
               :label="item.name"
               :value="item.id"
             ></el-option>
-          </el-select>
+          </el-select> -->
+          <el-cascader
+            v-model="categoriesListSelect"
+            :options="categoriesList"
+            :props="{ expandTrigger: 'hover', checkStrictly: true }"
+            @change="handleChange">
+          </el-cascader>
           <el-select
             v-model="searchTimeSelect"
             @change="searchTimeChange"
@@ -116,7 +122,7 @@
             v-html="items.firstPost && items.firstPost._data.contentHtml"
           ></a>
           <span class="iconfont iconvideo" v-if="items.threadVideo"></span>
-          <div class="cont-review-table__main__cont-imgs">
+          <div class="cont-review-table__main__cont-imgs" v-if="!items._data.title">
             <p
               class="cont-review-table__main__cont-imgs-p"
               v-for="(item,index) in items.firstPost && items.firstPost.images"

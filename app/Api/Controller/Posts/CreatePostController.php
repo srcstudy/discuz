@@ -44,6 +44,13 @@ class CreatePostController extends AbstractCreateController
     ];
 
     /**
+     * {@inheritdoc}
+     */
+    public $optionalInclude = [
+        'commentUser',
+    ];
+
+    /**
      * @var Dispatcher
      */
     protected $bus;
@@ -73,6 +80,10 @@ class CreatePostController extends AbstractCreateController
             $this->serializer = CommentPostSerializer::class;
 
             $this->include = array_merge($this->include, ['replyUser']);
+
+            if (Arr::has($data, 'attributes.commentPostId')) {
+                $this->include = array_merge($this->include, ['commentUser']);
+            }
         }
 
         return $this->bus->dispatch(

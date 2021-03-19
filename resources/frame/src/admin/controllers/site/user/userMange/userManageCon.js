@@ -40,7 +40,11 @@ export default {
           label: '审核拒绝'
         }
       ],
-      value: ''
+      value: '',
+      checkList: [],    // 多选值
+      singleChoice: '', // 单选值
+      realname: '', // 实名认证姓名
+      identity: '', // 实名认证身份证号
     }
   },
 

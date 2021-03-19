@@ -80,7 +80,8 @@ class RecommendedUserController extends AbstractListController
     {
         $include = $this->extractInclude($request);
         $limit = (int)Arr::get($request->getQueryParams(), 'limit');
-
+        $limit = abs($limit);
+        $limit > 20 && $limit = 20;
         $cacheKey = 'users_recommendedUser';
         $cacheData = $this->cache->get($cacheKey);
         $dataLimit = $limit * self::DATA_MULTIPLE;
@@ -90,7 +91,6 @@ class RecommendedUserController extends AbstractListController
             //缓存不存在、数据不够时 重新创建缓存，设置缓存数据池条数
             $cacheData = null;
         }
-
         $users = $this->search($dataLimit, $cacheData);
 
         if (!$cacheData) {

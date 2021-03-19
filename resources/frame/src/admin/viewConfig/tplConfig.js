@@ -39,12 +39,70 @@ export default {
             metaInfo: {
               title: "站点设置",
               name: "siteSet",
-              attribution: "全局"
+              attribution: "全局",
+              alias: "站点信息"
             }
           },
+          "site-theme": {
+            comLoad: function (resolve) {
+              require(["../view/site/global/siteSet/siteThemeView"], resolve);
+            },
+            metaInfo: {
+              title: "站点设置",
+              name: "siteSet",
+              attribution: "全局",
+              alias: "主题设置"
+            }
+          },
+          "site-function-set": {
+            comLoad: function (resolve) {
+              require(["../view/site/global/siteSet/siteFunctionSetView"], resolve);
+            },
+            metaInfo: {
+              title: "站点设置",
+              name: "siteSet",
+              attribution: "全局",
+              alias: "功能设置"
+            }
+          },
+          "site-sort-set": {
+            comLoad: function (resolve) {
+              require(["../view/site/global/siteSet/siteSortSetView"], resolve);
+            },
+            metaInfo: {
+              title: "站点设置",
+              name: "siteSet",
+              attribution: "全局",
+              alias: "首页数据设置"
+            }
+          },
+          // "operation-log": {
+          //   comLoad: function (resolve) {
+          //     require([
+          //       "../view/site/global/operationLogView"
+          //     ], resolve);
+          //   },
+          //   metaInfo: {
+          //     title: "操作日志",
+          //     name: "operationLog",
+          //     attribution: "全局",
+          //   }
+          // },
           "sign-up-set": {
             comLoad: function (resolve) {
               require(["../view/site/global/signUpSetView"], resolve);
+            },
+            metaInfo: {
+              title: "注册与登录设置",
+              name: "signUpSet",
+              attribution: "全局"
+            }
+          },
+          "registration-btn" : {
+            comLoad: function (resolve) {
+              require([
+                "../view/site/global/registrationLoginPage/expandPageView"
+              ], resolve);
             },
             metaInfo: {
               title: "注册与登录设置",
@@ -177,7 +235,7 @@ export default {
               title: "通知设置",
               name: "noticeSet",
               attribution: "全局",
-              alias: "系统通知"
+              // alias: "系统通知"
             }
           },
           "notice-configure": {
@@ -342,7 +400,8 @@ export default {
           //内容分类
           "cont-class": {
             comLoad: function (resolve) {
-              require(["../view/site/cont/contClassView"], resolve);
+              // require(["../view/site/cont/contClassView"], resolve);
+              require(["../view/site/cont/contClassPayView"], resolve);
             },
             metaInfo: {
               title: "内容分类",
@@ -600,7 +659,8 @@ export default {
           },
           "rol-permission": {
             comLoad: function (resolve) {
-              require(["../view/site/user/userRol/rolPermissionView"], resolve);
+              // require(["../view/site/user/userRol/rolPermissionView"], resolve);
+              require(["../view/site/user/userRol/rolPermissionPayView"], resolve);
             },
             metaInfo: {
               title: "用户角色",

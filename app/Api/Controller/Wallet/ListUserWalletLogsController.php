@@ -24,6 +24,7 @@ use App\Models\UserWalletLog;
 use App\Repositories\UserWalletLogsRepository;
 use Discuz\Api\Controller\AbstractListController;
 use Discuz\Auth\AssertPermissionTrait;
+use Discuz\Auth\Exception\PermissionDeniedException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Routing\UrlGenerator;
 use Illuminate\Database\Eloquent\Builder;
@@ -133,7 +134,12 @@ class ListUserWalletLogsController extends AbstractListController
         $limit = $this->extractLimit($request);
         $offset = $this->extractOffset($request);
         $include = $this->extractInclude($request);
-
+        //如果用户不是管理员，那么就只能看自己的提现记录
+        if(!$actor->isAdmin() && !empty($filter['user'])){
+            if($filter['user'] != $actor->id){
+                throw new PermissionDeniedException;
+            }
+        }
         $walletLogs = $this->search($actor, $filter, $sort, $limit, $offset);
 
         $document->addPaginationLinks(
@@ -209,7 +215,7 @@ class ListUserWalletLogsController extends AbstractListController
     {
         $log_user = (int)Arr::get($filter, 'user'); //用户
         $log_change_desc = Arr::get($filter, 'change_desc'); //变动描述
-        $log_change_type = Arr::get($filter, 'change_type'); //变动类型
+        $log_change_type = Arr::get($filter, 'change_type', ''); //变动类型
         $log_username = Arr::get($filter, 'username'); //变动钱包所属人
         $log_start_time = Arr::get($filter, 'start_time'); //变动时间范围：开始
         $log_end_time = Arr::get($filter, 'end_time'); //变动时间范围：结束
@@ -222,7 +228,7 @@ class ListUserWalletLogsController extends AbstractListController
         $query->when($log_change_desc, function ($query) use ($log_change_desc) {
             $query->where('change_desc', 'like', "%$log_change_desc%");
         });
-        $query->when(!is_null($log_change_type), function ($query) use ($log_change_type) {
+        $query->when($log_change_type, function ($query) use ($log_change_type) {
             $log_change_type = explode(',', $log_change_type);
             $query->whereIn('change_type', $log_change_type);
         });

@@ -19,6 +19,7 @@
 namespace App\Commands\Group;
 
 use App\Models\User;
+use App\Models\AdminActionLog;
 use App\Repositories\GroupRepository;
 use Discuz\Auth\AssertPermissionTrait;
 use Discuz\Foundation\EventsDispatchTrait;
@@ -62,8 +63,15 @@ class DeleteGroup
         $group = $groups->findOrFail($this->id, $this->actor);
 
         $this->assertCan($this->actor, 'delete', $group);
+        $this->assertAdmin($this->actor);
+        $oldGroup = $group;
 
         $group->delete();
+
+        AdminActionLog::createAdminActionLog(
+            $this->actor->id,
+            '删除用户角色【'. $oldGroup->name .'】'
+        );
 
         $this->dispatchEventsFor($group, $this->actor);
 

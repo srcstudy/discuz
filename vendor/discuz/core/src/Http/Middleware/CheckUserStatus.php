@@ -18,7 +18,11 @@
 
 namespace Discuz\Http\Middleware;
 
+use App\Models\User;
+use App\Models\UserSignInFields;
 use Discuz\Auth\Exception\PermissionDeniedException;
+use Discuz\Common\Utils;
+use Discuz\Http\DiscuzResponseFactory;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -26,6 +30,11 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class CheckUserStatus implements MiddlewareInterface
 {
+    private $noCheckAction = [
+        '/api/user/signinfields',
+        '/api/attachments'
+    ];
+
     /**
      * {@inheritdoc}
      *
@@ -33,25 +42,55 @@ class CheckUserStatus implements MiddlewareInterface
      */
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $actor = $request->getAttribute('actor');
 
+        $actor = $request->getAttribute('actor');
         // 被禁用的用户
-        if ($actor->status == 1) {
+        if ($actor->status == User::STATUS_BAN) {
             throw new PermissionDeniedException('ban_user');
         }
         // 审核中的用户
-        if ($actor->status == 2) {
-            throw new PermissionDeniedException('register_validate');
+        if ($actor->status == User::STATUS_MOD) {
+            $path = $request->getUri()->getPath();
+            if (!in_array($path, $this->noCheckAction)) {
+                $this->exceptionResponse($actor->id,'register_validate');
+            }
         }
         // 审核拒绝
-        if ($actor->status == 3) {
-            throw new PermissionDeniedException('validate_reject');
+        if ($actor->status == User::STATUS_REFUSE) {
+            $this->exceptionResponse($actor->id,'validate_reject');
+
+//            throw new PermissionDeniedException('validate_reject');
         }
         // 审核忽略
-        if ($actor->status == 4) {
+        if ($actor->status == User::STATUS_IGNORE) {
             throw new PermissionDeniedException('validate_ignore');
         }
-
+        // 待填写扩展审核字段的用户
+        if ($actor->status == User::STATUS_NEED_FIELDS) {
+            $path = $request->getUri()->getPath();
+            if (!in_array($path, $this->noCheckAction)) {
+                throw new PermissionDeniedException('need_ext_fields');
+            }
+        }
         return $handler->handle($request);
+    }
+
+    private function exceptionResponse($userId, $msg)
+    {
+        $crossHeaders = DiscuzResponseFactory::getCrossHeaders();
+        foreach ($crossHeaders as $k=>$v) {
+            header($k . ':' . $v);
+        }
+        $response = [
+            'errors' => [
+                [
+                    'status' => '401',
+                    'code' => $msg,
+                    'data' => User::getUserReject($userId)
+                ]
+            ]
+        ];
+        header('Content-Type:application/json; charset=utf-8', true, 401);
+        exit(json_encode($response, 256));
     }
 }

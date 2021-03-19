@@ -27,8 +27,11 @@ use App\Models\Post;
 use App\Models\PostUser;
 use App\Models\Thread;
 use App\Models\User;
+use App\Models\Setting;
+use App\Models\Sequence;
 use App\Repositories\ThreadRepository;
 use App\Repositories\TopicRepository;
+use App\Repositories\SequenceRepository;
 use Discuz\Api\Controller\AbstractListController;
 use Discuz\Auth\AssertPermissionTrait;
 use Discuz\Auth\Exception\PermissionDeniedException;
@@ -75,6 +78,7 @@ class ListThreadsController extends AbstractListController
         'lastThreePosts',
         'lastThreePosts.user',
         'lastThreePosts.replyUser',
+        'lastThreePosts.commentUser',
         'rewardedUsers',
         'paidUsers',
         'lastDeletedLog',
@@ -161,7 +165,12 @@ class ListThreadsController extends AbstractListController
         $actor = $request->getAttribute('actor');
         $params = $request->getQueryParams();
         $filter = $this->extractFilter($request);
-
+        if (!(
+            isset($filter['createdAtBegin']) ||
+            isset($filter['createdAtEnd'])
+        )) {
+            app()->instance('isCalled', true);
+        }
         // 获取推荐到站点信息页数据时 不检查权限
         if (Arr::get($filter, 'isSite', '') !== 'yes') {
             // 没有任何一个分类的查看权限时，判断是否有全局权限
@@ -178,9 +187,18 @@ class ListThreadsController extends AbstractListController
             $group = $groups[0];
             $params['userRole'] = $group['id'];
         }
-        $cacheKey = CacheKey::LIST_THREAD_HOME_INDEX . md5(json_encode($params, 256));
-        $data = $this->cache->get($cacheKey);
-        if (!empty($data)) {
+        if((!isset($filter['isSort']) || (int)$filter['isSort'] !== 1) && !isset($filter['createdAtBegin'])){
+            $cacheKey = CacheKey::LIST_THREAD_HOME_INDEX . md5(json_encode($params, 256));
+            $keys = $this->cache->get(CacheKey::LIST_THREAD_KEYS);
+            $data = null;
+            if(!empty($keys)){
+                $keys = json_decode($keys,true);
+                if($keys && in_array($cacheKey,$keys)){
+                    $data = $this->cache->get($cacheKey);
+                }
+            }
+        }
+        if (isset($data) && !empty($data)) {
             $obj  = unserialize($data);
             $metaLinks = $obj->getMetaLinks();
             $threads = $obj->getThreads();
@@ -195,8 +213,9 @@ class ListThreadsController extends AbstractListController
         $limit = $this->extractLimit($request);
         $offset = $this->extractOffset($request);
         $include = $this->extractInclude($request);
+        $page = $params['page'];
 
-        $threads = $this->search($actor, $filter, $sort, $limit, $offset);
+        $threads = $this->search($actor, $filter, $sort, $limit, $offset, $page);
 
         $this->addDocument($document, $params, $this->threadCount, $offset, $limit);
 
@@ -269,9 +288,9 @@ class ListThreadsController extends AbstractListController
                 }
             });
         }
-        if ($canCache) {
+        if ($canCache && (!isset($filter['isSort']) || (int)$filter['isSort'] !== 1) && !isset($filter['createdAtBegin'])) {
             $this->threadCache->setThreads($threads);
-            $this->cache->put($cacheKey, serialize($this->threadCache), 1800);
+            $this->cache->put($cacheKey, serialize($this->threadCache), 1800)&&
             $this->appendCache(CacheKey::LIST_THREAD_KEYS, $cacheKey, 1800);
         }
         return $threads;
@@ -346,20 +365,49 @@ class ListThreadsController extends AbstractListController
      *
      * @return Collection
      */
-    public function search($actor, $filter, $sort, $limit = null, $offset = 0)
+    public function search($actor, $filter, $sort, $limit = null, $offset = 0, $page)
     {
         /** @var Builder $query */
         $query = $this->threads->query()->select('threads.*')->whereVisibleTo($actor);
 
+        if(!isset($filter['createdAtBegin'])){
+            // from index request
+            if(isset($filter['isSort']) && $filter['isSort'] == 1) {
+                $cacheKey = CacheKey::LIST_SEQUENCE_THREAD_INDEX;
+                $index_thread_ids = $this->cache->get($cacheKey);
+
+                if(empty($index_thread_ids['ids']) || $page['number'] !== 1){
+                    $index_thread_ids = app(SequenceRepository::class)->getSequenceCache($page);
+                }
+
+                if(!empty($index_thread_ids['ids']) && $page['number'] == 1){
+                    $index_thread_ids = array_slice($index_thread_ids, 0, $page['limit']);
+                }
+
+                if(!empty($index_thread_ids['ids'])){
+                    $query->whereIn('threads.id', $index_thread_ids['ids']);
+                }
+            }
+        }
+
         $this->applyFilters($query, $filter, $actor);
+
 
         if (Arr::get($filter, 'location')) {
             $this->threadCount = $limit > 0 ? Thread::query()->fromSub($query, 'count')->count() : null;
         } else {
-            $this->threadCount = $limit > 0 ? $query->count() : null;
+            if(isset($index_thread_ids) && !empty($index_thread_ids['thread_count'])) {
+                $this->threadCount = $index_thread_ids['thread_count'];
+            }else{
+                $this->threadCount = $limit > 0 ? $query->count() : null;
+            }
         }
 
-        $query->skip($offset)->take($limit);
+        if(isset($index_thread_ids) && !empty($index_thread_ids['ids'])) {
+            $query->skip(0)->take($limit);
+        }else{
+            $query->skip($offset)->take($limit);
+        }
 
         foreach ((array) $sort as $field => $order) {
             $query->orderBy(Str::snake($field), $order);
@@ -378,9 +426,22 @@ class ListThreadsController extends AbstractListController
      */
     private function applyFilters(Builder $query, array $filter, User $actor)
     {
+        $query->where(['threads.is_draft' => 0]);
+
         // 分类
-        if ($categoryId = Arr::get($filter, 'categoryId')) {
-            $query->where('threads.category_id', $categoryId);
+        $categoryId = Arr::get($filter, 'categoryId');
+        if($categoryId == 0){
+            $query->where('threads.category_id', '>=', 0);
+        }else if($categoryId !== '' && $categoryId !== 0){
+            if (strpos($categoryId, ',') === false) {
+                $query->where('threads.category_id', $categoryId);
+            } else {
+                $categoryId = Str::of($categoryId)->explode(',')->map(function ($item) {
+                    return (int) $item;
+                })->unique()->values();
+
+                $query->whereIn('threads.category_id', $categoryId);
+            }
         }
 
         // 类型：0普通 1长文 2视频 3图片
@@ -400,7 +461,7 @@ class ListThreadsController extends AbstractListController
         // 作者 ID
         if ($userId = Arr::get($filter, 'userId')) {
             if (is_numeric($type) && $type == Thread::TYPE_OF_QUESTION && Arr::get($filter, 'answer') == 'yes') {
-                $query->join('questions', 'threads.id', '=', 'questions.thread_id')
+                $query->leftJoin('questions', 'threads.id', '=', 'questions.thread_id')
                     ->where(function (Builder $query) use ($userId) {
                         $query->where('threads.user_id', $userId)->orWhere('questions.be_user_id', $userId);
                     });
@@ -642,7 +703,6 @@ class ListThreadsController extends AbstractListController
             ->whereIn('thread_id', $threadIds)
             ->whereNull('deleted_at')
             ->where('is_first', false)
-            ->where('is_comment', false)
             ->where('is_approved', Post::APPROVED)
             ->orderBy('updated_at', 'desc')
             ->get()

@@ -63,6 +63,7 @@ class ResourcePostController extends AbstractResourceController
         'commentPosts.user.groups',
         'commentPosts.replyUser',
         'commentPosts.replyUser.groups',
+        'commentPosts.commentUser',
         'commentPosts.mentionUsers',
         'commentPosts.images',
         'images',
@@ -99,6 +100,8 @@ class ResourcePostController extends AbstractResourceController
         if (($postRelationships = $this->getPostRelationships($include)) || in_array('commentPosts', $include)) {
             $this->includePosts($post, $request, $postRelationships);
         }
+
+        $post->rewards = floatval(sprintf('%.2f', $post->getPostReward()));
 
         return $post;
     }

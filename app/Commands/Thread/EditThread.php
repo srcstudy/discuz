@@ -19,11 +19,16 @@
 namespace App\Commands\Thread;
 
 use App\Censor\Censor;
+use App\Events\Post\Saved;
+use App\Events\Thread\Deleting;
+use App\Repositories\SequenceRepository;
 use App\Events\Thread\Saving;
 use App\Events\Thread\ThreadWasApproved;
+use App\Events\Thread\Updated;
 use App\Models\Thread;
 use App\Models\ThreadVideo;
 use App\Models\User;
+use App\Models\AdminActionLog;
 use App\Repositories\ThreadRepository;
 use App\Repositories\ThreadVideoRepository;
 use App\Traits\ThreadNoticesTrait;
@@ -93,6 +98,7 @@ class EditThread
         $attributes = Arr::get($this->data, 'attributes', []);
 
         $thread = $threads->findOrFail($this->threadId, $this->actor);
+        $action_desc = '';
 
         if (isset($attributes['title'])) {
             $this->assertCan($this->actor, 'edit', $thread);
@@ -111,6 +117,12 @@ class EditThread
             $thread->timestamps = false;
         }
 
+        if($thread->title == '' || empty($thread->title)) {
+            $threadTitle = '，其ID为'. $thread->id;
+        }else{
+            $threadTitle = '【'. $thread->title .'】';
+        }
+
         // 长文可以设置、编辑 附件价格
         if (isset($attributes['attachment_price']) && $thread->type == Thread::TYPE_OF_LONG) {
             $this->assertCan($this->actor, 'edit', $thread);
@@ -119,8 +131,13 @@ class EditThread
                 $this->assertCan($this->actor, 'createThreadPaid');
             }
         }
-        // 非文字贴可设置价格
-        if (isset($attributes['price']) && $thread->type !== Thread::TYPE_OF_TEXT) {
+
+        // 文字贴与问答帖不能修改价格
+        if (
+            isset($attributes['price'])
+            && $thread->type !== Thread::TYPE_OF_TEXT
+            && $thread->type !== Thread::TYPE_OF_QUESTION
+        ) {
             $this->assertCan($this->actor, 'edit', $thread);
 
             // 是否有权发布付费贴
@@ -149,6 +166,16 @@ class EditThread
             if ($thread->is_approved != $attributes['isApproved']) {
                 $thread->is_approved = $attributes['isApproved'];
 
+                if($attributes['isApproved'] == Thread::APPROVED){
+                    $action_desc = '用户主题帖'. $threadTitle .'，通过审核';
+                }
+                if($attributes['isApproved'] == Thread::UNAPPROVED){
+                    $action_desc = '用户主题帖'. $threadTitle .'，暂被设为非法';
+                }
+                if($attributes['isApproved'] == Thread::IGNORED){
+                    $action_desc = '用户主题帖'. $threadTitle .'，被忽略';
+                }
+
                 $thread->raise(
                     new ThreadWasApproved($thread, $this->actor, ['message' => $attributes['message'] ?? ''])
                 );
@@ -156,13 +183,15 @@ class EditThread
         }
 
         if (isset($attributes['isSticky'])) {
-            $this->assertCan($this->actor, 'sticky', $thread);
+            // $this->assertCan($this->actor, 'isSticky', $thread);
 
-            if ($thread->is_sticky != $attributes['isSticky']) {
-                $thread->is_sticky = $attributes['isSticky'];
+            if($this->actor->can('sticky', $thread)){
+                if ($thread->is_sticky != $attributes['isSticky']) {
+                    $thread->is_sticky = $attributes['isSticky'];
 
-                if ($thread->is_sticky) {
-                    $this->threadNotices($thread, $this->actor, 'isSticky', $attributes['message'] ?? '');
+                    if ($thread->is_sticky) {
+                        $this->threadNotices($thread, $this->actor, 'isSticky', $attributes['message'] ?? '');
+                    }
                 }
             }
         }
@@ -192,15 +221,16 @@ class EditThread
 
             if ($attributes['isDeleted']) {
                 $thread->hide($this->actor, ['message' => $attributes['message'] ?? '']);
+                $action_desc = '删除用户主题帖'. $threadTitle;
             } else {
                 $thread->restore($this->actor, ['message' => $attributes['message'] ?? '']);
+                $action_desc = '还原用户主题帖'. $threadTitle;
             }
         }
 
         $this->events->dispatch(
             new Saving($thread, $this->actor, $this->data)
         );
-
         $validator->valid($thread->getDirty());
 
         // 编辑视频帖或语音帖
@@ -226,7 +256,22 @@ class EditThread
             }
         }
 
+        $thread->raise(new Updated($thread, $this->actor, $this->data));
+
         $thread->save();
+        if (isset($attributes['isDeleted'])){
+            $this->events->dispatch(new Deleting($thread, $this->actor, $this->data));
+        }
+        if(!isset($attributes['isFavorite']) && !isset($attributes['isSticky']) && !isset($attributes['isEssence'])){
+            app(SequenceRepository::class)->updateSequenceCache($this->threadId, 'edit');
+        }
+
+        if($action_desc !== '' && !empty($action_desc)){
+            AdminActionLog::createAdminActionLog(
+                $this->actor->id,
+                $action_desc
+            );
+        }
 
         $this->dispatchEventsFor($thread, $this->actor);
 

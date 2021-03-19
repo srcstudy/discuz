@@ -26,6 +26,7 @@ use App\Events\Post\Restored;
 use App\Events\Post\Revised;
 use App\Events\Post\Saved;
 use App\Events\Post\Saving;
+use App\Events\Thread\Deleting;
 use App\Listeners\User\CheckPublish;
 use App\Models\Post;
 use App\Models\PostGoods;
@@ -42,12 +43,21 @@ use Discuz\Auth\AssertPermissionTrait;
 use Exception;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Str;
 
 class PostListener
 {
     use AssertPermissionTrait;
     use PostNoticesTrait;
+
+    /**
+     * @var Dispatcher
+     */
+    private $bus;
+
+    public function __construct(Dispatcher $bus)
+    {
+        $this->bus = $bus;
+    }
 
     public function subscribe(Dispatcher $events)
     {
@@ -64,6 +74,7 @@ class PostListener
 
         // 删除首帖
         $events->listen(Deleted::class, [$this, 'whenPostWasDeleted']);
+        $events->listen(Deleting::class, [$this, 'whenDeleteThread']);
 
         // 修改内容
         $events->listen(Revised::class, [$this, 'whenPostWasRevised']);
@@ -85,6 +96,12 @@ class PostListener
         $events->listen(Saved::class, [$this, 'postGoods']);
     }
 
+    public function whenDeleteThread(Deleting $event){
+        $actor = $event->actor;
+        $actor->refreshUserLiked();
+        $actor->save();
+    }
+
     /**
      * 发送通知
      *
@@ -96,37 +113,31 @@ class PostListener
         $actor = $event->actor;
 
         if ($post->is_approved == Post::APPROVED) {
-            // 如果当前用户不是主题作者，也是合法的，则通知主题作者
-            if ($post->thread->user_id != $actor->id) {
-                $build = [
-                    'message' => $post->getSummaryContent(Post::NOTICE_LENGTH, true)['content'],
-                    'subject' => $post->getSummaryContent(Post::NOTICE_LENGTH, true)['first_content'],
-                    'raw' => array_merge(Arr::only($post->toArray(), ['id', 'thread_id', 'reply_post_id']), [
-                        'actor_username' => $actor->username    // 发送人姓名
-                    ]),
-                ];
+            /**
+             * 如果当前用户不是主题作者，也是合法的，不是回复的回复，也不是楼中楼
+             * 则通知主题作者
+             */
+            if (
+                $post->thread->user_id != $actor->id
+                && is_null($post->reply_post_id)
+                && is_null($post->comment_post_id)
+            ) {
                 // Tag 发送通知
-                $post->thread->user->notify(new Replied($actor, $post, $build));
+                $post->thread->user->notify(new Replied($actor, $post, ['notify_type' => 'notify_thread']));
             }
 
-            // 如果被回复的用户不是当前用户，也不是主题作者，也是合法的，则通知被回复的人
-            if (
-                $post->reply_post_id
-                && $post->reply_user_id != $actor->id
-                && $post->reply_user_id != $post->thread->user_id
-            ) {
-                // 被回复内容
-                $post->replyPost->content = Str::of($post->replyPost->content)->substr(0, Post::NOTICE_LENGTH);
-
-                $buildReplyUser = [
-                    'message' => $post->getSummaryContent(Post::NOTICE_LENGTH, true)['content'],
-                    'subject' => $post->replyPost->formatContent(), // 解析content
-                    'raw' => array_merge(Arr::only($post->toArray(), ['id', 'thread_id', 'reply_post_id']), [
-                        'actor_username' => $actor->username    // 发送人姓名
-                    ]),
-                ];
-                // Tag 发送通知
-                $post->replyUser->notify(new Replied($actor, $post, $buildReplyUser));
+            /**
+             * 如果被回复的用户不是当前用户，也不是主题作者，也是合法的，
+             * 则通知被回复的人
+             */
+            elseif ($post->reply_post_id && $post->reply_user_id != $actor->id) {
+                // Tag 发送通知 判断是否是 楼中楼
+                if (is_null($post->comment_post_id)) {
+                    $post->replyUser->notify(new Replied($actor, $post, ['notify_type' => 'notify_reply_post']));
+                } else {
+                    // 多级楼中楼
+                    $post->commentUser->notify(new Replied($actor, $post, ['notify_type' => 'notify_comment_post']));
+                }
             }
         }
     }
@@ -168,6 +179,12 @@ class PostListener
             PostMod::query()->where('post_id', $post->id)->delete();
 
             $action = 'approve';
+
+            if ($post->thread->is_red_packet == Thread::HAVE_RED_PACKET) { //当过审的回复为红包帖的回复时触发领红包事件
+                $this->bus->dispatch(
+                    new Saved($post, $post->user, $event->data)
+                );
+            }
         } elseif ($post->is_approved === Post::IGNORED) {
             $action = 'ignore';
         } else {
@@ -238,12 +255,12 @@ class PostListener
         if ($event->post->user && $event->post->user->id != $event->actor->id) {
             $build = [
                 'message' => $event->content,
-                'raw' => Arr::only($event->post->toArray(), ['id', 'thread_id', 'is_first']),
+                'post' => $event->post,
                 'notify_type' => PostMessage::NOTIFY_EDIT_CONTENT_TYPE,
             ];
 
             // Tag 发送通知
-            $event->post->user->notify(new System(PostMessage::class, $event->post->user, $build));
+            $event->post->user->notify(new System(PostMessage::class, $event->actor, $build));
         }
     }
 
@@ -253,9 +270,13 @@ class PostListener
     public function userMentions(Saved $event)
     {
         $post = $event->post;
+        //是否草稿
+        if($post->thread->is_draft == 1){
+            return;
+        }
 
         // 新建 或者 修改了是否合法字段 并且 合法时，发送 @ 通知
-        if (($post->wasRecentlyCreated || $post->wasChanged('is_approved')) && $post->is_approved === Post::APPROVED) {
+        if ($post->thread->is_draft == 0 || ($post->wasRecentlyCreated || $post->wasChanged('is_approved')) && $post->is_approved === Post::APPROVED) {
             $this->sendRelated($event->post, $event->post->user);
         }
     }
@@ -285,6 +306,11 @@ class PostListener
             }
 
             $goodsId = (int) Arr::get($event->data, 'attributes.post_goods_id');
+
+            $isDraft = (int) Arr::get($event->data, 'attributes.is_draft');
+            if ($isDraft && !$goodsId) {
+                return;
+            }
 
             /**
              * 每个商品绑定一个 Post

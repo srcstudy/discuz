@@ -65,6 +65,11 @@ class PostAttachment
      */
     public function whenPostIsSaving(Saving $event)
     {
+        // 草稿不做验证
+        $isDraft = (int) Arr::get($event->data, 'attributes.is_draft');
+        if ($isDraft) {
+            return;
+        }
 
         if ($event->post->is_first) {
             if ($event->post->exists) {
@@ -108,12 +113,10 @@ class PostAttachment
     {
         $post = $event->post;
         $actor = $event->actor;
+        $content = Arr::get($event->data, 'attributes.content');
 
         // 长文帖从内容中解析图片 ID，否则根据传入关系处理附件
-        if (
-            $post->thread->type === Thread::TYPE_OF_LONG
-            && ($post->wasRecentlyCreated || $post->wasChanged('content'))
-        ) {
+        if ($post->thread->type === Thread::TYPE_OF_LONG && ! is_null($content)) {
             $ids = Utils::getAttributeValues($post->getRawOriginal('content'), 'IMG', 'title');
         } elseif (! Arr::has($event->data, 'relationships.attachments.data')) {
             return;

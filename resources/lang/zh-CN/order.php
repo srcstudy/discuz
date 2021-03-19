@@ -18,6 +18,9 @@ return [
     'order_type_attachment'         => '付费附件',
     'order_thread_attachment_error' => '付费附件',
 
+    'order_type_text'               =>'文字帖红包',
+    'order_type_long'               =>'长文帖红包',
+
     'payee_not_found'               => '收款人不存在',
     'order_group_error'             => '用户组不存在或配置有误',
     'order_group_forbidden'         => '默认用户组不允许被购买',
@@ -27,4 +30,8 @@ return [
     'order_question_onlooker_seen'       => '帖子已支付围观金额',
 
     'order_pay_group_closed' => '权限购买未开启',
+
+    'abnormal_text_order_return_money'      =>'文字帖订单异常返现',
+    'abnormal_long_order_return_money'      =>'长文帖订单异常返现',
+    'abnormal_question_order_return_money'  =>'问答帖订单异常返现',
 ];

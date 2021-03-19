@@ -35,6 +35,9 @@ abstract class AbstractSerializer implements SerializerInterface
      */
     public function getId($model)
     {
+        if(!isset($model->id)){
+            return '';
+        }
         return $model->id;
     }
 

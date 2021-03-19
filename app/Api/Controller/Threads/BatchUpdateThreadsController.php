@@ -66,11 +66,14 @@ class BatchUpdateThreadsController extends AbstractListController
      */
     protected function data(ServerRequestInterface $request, Document $document)
     {
+        $this->assertAdmin($request->getAttribute('actor'));
         $actor = $request->getAttribute('actor');
         $data = $request->getParsedBody()->get('data', []);
         $meta = $request->getParsedBody()->get('meta', []);
 
+        $this->assertAdmin($actor);
         $this->assertCan($actor, 'thread.batchEdit');
+        $this->assertBatchData($data);
 
         // 将操作应用到其他所有页面
         if (isset($meta['query']) && in_array($meta['type'], ['approve', 'ignore', 'delete', 'restore'])) {

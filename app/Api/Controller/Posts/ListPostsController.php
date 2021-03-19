@@ -24,6 +24,7 @@ use App\Common\CacheKey;
 use App\Common\PostCache;
 use App\Models\Post;
 use App\Models\User;
+use App\Models\ThreadReward;
 use App\Repositories\PostRepository;
 use Discuz\Api\Controller\AbstractListController;
 use Discuz\Auth\AssertPermissionTrait;
@@ -52,6 +53,7 @@ class ListPostsController extends AbstractListController
     public $include = [
         'user',
         'replyUser',
+        'commentUser',
         'images',
     ];
 
@@ -65,6 +67,7 @@ class ListPostsController extends AbstractListController
         'lastThreeComments',
         'lastThreeComments.user',
         'lastThreeComments.replyUser',
+        'lastThreeComments.commentUser',
         'lastThreeComments.images',
         'deletedUser',
         'lastDeletedLog',
@@ -111,6 +114,7 @@ class ListPostsController extends AbstractListController
     protected $tablePrefix;
     protected $cache;
     private $postCache;
+
     /**
      * @param PostRepository $posts
      * @param UrlGenerator $url
@@ -134,10 +138,18 @@ class ListPostsController extends AbstractListController
         $params = $request->getQueryParams();
         $filter = $this->extractFilter($request);
         $sort = $this->extractSort($request);
-        //设置评论列表第一页缓存
-        list($cacheKey, $posts) = $this->getCache($params,$filter, $document);
-        if ($posts) {
-            return $posts;
+
+        $threadId = Arr::get($filter, 'thread');
+        if(!empty($threadId)){
+            $threadQuestionType = ThreadReward::query()->where('thread_id', $threadId)->first();
+        }
+        
+        if(!isset($threadQuestionType->type) || ($threadQuestionType->type !== 0)){
+            //设置评论列表第一页缓存
+            list($cacheKey, $posts) = $this->getCache($params,$filter, $document);
+            if ($posts) {
+                return $posts;
+            }
         }
         $limit = $this->extractLimit($request);
         $offset = $this->extractOffset($request);
@@ -180,9 +192,19 @@ class ListPostsController extends AbstractListController
             });
         }
         $posts->loadMissing($include);
-        if($this->canCache($params)){
+
+        $posts->map(function ($post) {
+            $post->rewards = floatval(sprintf('%.2f', $post->getPostReward()));
+        });
+
+        if($params['sort'] == 'createdAt'){
+            $sorted = $posts->sortByDesc('rewards');
+            $posts = $sorted->values();
+        }
+
+        if($this->canCache($params) && !empty($cacheKey)){
             $this->postCache->setPosts($posts);
-            $this->cache->put($cacheKey, serialize( $this->postCache), 5*60);
+            $this->cache->put($cacheKey, serialize($this->postCache), 5 * 60);
         }
         return $posts;
     }
@@ -217,11 +239,11 @@ class ListPostsController extends AbstractListController
     private function canCache($params)
     {
         //pc端倒序不允许使用缓存
-        if($params['sort'] == '-createdAt'){
+        if (isset($params['sort']) && $params['sort'] == '-createdAt') {
             return false;
         }
         if (isset($params['filter'])) {
-            if(!isset($params['filter']['isComment'])){
+            if (!isset($params['filter']['isComment'])) {
                 return false;
             }
             if (strtolower($params['filter']['isComment']) == 'yes') {
@@ -283,7 +305,7 @@ class ListPostsController extends AbstractListController
 
         $query->skip($offset)->take($limit);
 
-        foreach ((array) $sort as $field => $order) {
+        foreach ((array)$sort as $field => $order) {
             $query->orderBy(Str::snake($field), $order);
         }
 

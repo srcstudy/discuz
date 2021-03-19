@@ -22,6 +22,7 @@ use App\Api\Controller\Posts\UpdatePostController;
 use App\Api\Controller\Threads\CreateThreadController;
 use App\Api\Controller\Threads\ResourceThreadController;
 use App\Api\Controller\Threads\UpdateThreadController;
+use App\Api\Controller\Threads\UpdateDraftController;
 use App\Api\Serializer\AttachmentSerializer;
 use App\Models\Attachment;
 use App\Models\Post;
@@ -37,16 +38,23 @@ class ReplaceContentAttachUrl
             $event->isController(ResourceThreadController::class)
             || $event->isController(CreateThreadController::class)
             || $event->isController(UpdateThreadController::class)
+            || $event->isController(UpdateDraftController::class)
             || $event->isController(UpdatePostController::class)
         ) {
-            if ($event->data instanceof Thread) {
-                /** @var Thread $thread */
-                $thread = $event->data;
-
-                $post = $thread->firstPost;
-            } elseif ($event->data instanceof Post) {
+            // 图文混排需要替换插入文中的图片及附件地址
+            if ($event->data instanceof Thread && $event->data->type === Thread::TYPE_OF_LONG) {
+                $post = $event->data->firstPost;
+            } elseif (
+                $event->data instanceof Post
+                && $event->data->is_first
+                && $event->data->thread->type === Thread::TYPE_OF_LONG
+            ) {
                 $post = $event->data;
             } else {
+                return;
+            }
+
+            if (!$post) {
                 return;
             }
 
@@ -71,29 +79,21 @@ class ReplaceContentAttachUrl
             $xml = $post->getRawOriginal('content');
 
             // 替换插入内容中的图片 URL
-            Utils::replaceAttributes($xml, 'IMG', function ($img) use (&$xml, $attachments) {
-                if (isset($img['title']) && isset($attachments[$img['title']])) {
-                    $xml = str_replace(
-                        htmlspecialchars($img['src']),
-                        $attachments[$img['title']],
-                        $xml
-                    );
+            $xml = Utils::replaceAttributes($xml, 'IMG', function ($attributes) use ($attachments) {
+                if (isset($attributes['title']) && isset($attachments[$attributes['title']])) {
+                    $attributes['src'] = $attachments[$attributes['title']];
                 }
 
-                return $img;
+                return $attributes;
             });
 
             // 替换插入内容中的附件 URL
-            Utils::replaceAttributes($xml, 'URL', function ($url) use (&$xml, $attachments) {
-                if (isset($url['title']) && isset($attachments[$url['title']])) {
-                    $xml = str_replace(
-                        htmlspecialchars($url['url']),
-                        $attachments[$url['title']],
-                        $xml
-                    );
+            $xml = Utils::replaceAttributes($xml, 'URL', function ($attributes) use ($attachments) {
+                if (isset($attributes['title']) && isset($attachments[$attributes['title']])) {
+                    $attributes['url'] = $attachments[$attributes['title']];
                 }
 
-                return $url;
+                return $attributes;
             });
 
             $post->parsedContent = $xml;

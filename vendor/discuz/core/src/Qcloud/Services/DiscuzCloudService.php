@@ -53,6 +53,12 @@ class DiscuzCloudService
         ]);
     }
 
+    public function statistics($body = '')
+    {
+        return $this->getHttpClient()->requestAsync('POST', 'cloud/statistics', [
+            'json' => $body
+        ]);
+    }
     /**
      * @param string $body
      * @return mixed|\Psr\Http\Message\ResponseInterface
@@ -69,4 +75,12 @@ class DiscuzCloudService
     {
         return $this->httpClient ?? $this->httpClient = new Client($this->config);
     }
+
+    public function uinStatistics($body = '')
+    {
+        return $this->getHttpClient()->requestAsync('POST', 'cloud/uinStatistics', [
+            'json' => $body
+        ]);
+    }
+
 }

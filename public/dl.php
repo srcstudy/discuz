@@ -1,5 +1,5 @@
 <?php
-$SELF_VERSION = "v2.1.201117";
+$SELF_VERSION = "2.3.210208";
 
 set_time_limit(300);
 error_reporting(E_ALL ^ E_WARNING);
@@ -266,7 +266,7 @@ function check_env()
 function check_ssl_certificate()
 {
 	global $LANG;
-	$LANG['ssl_certificate'] = 'CA根证书库检查 <a href="https://discuz.chat/docs/install_faq.html#windows%E4%B8%8Bca%E6%A0%B9%E8%AF%81%E4%B9%A6%E5%BA%93%E9%94%99%E8%AF%AF" target="_blank">处理方案</a>';
+	$LANG['ssl_certificate'] = 'CA根证书库检查 <a href="https://discuz.com/docs/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98.html#windows%E4%B8%8B%E6%8F%90%E7%A4%BA-ca-%E6%A0%B9%E8%AF%81%E4%B9%A6%E5%BA%93%E9%94%99%E8%AF%AF%E5%A6%82%E4%BD%95%E8%A7%A3%E5%86%B3" target="_blank">处理方案</a>';
 	$LANG['download_test'] = '下载外部文件';
 	$ssl_check = array();
 	$url_to_check = 'https://discuzq-docs-1258344699.cos.ap-guangzhou.myqcloud.com/upgrade.txt';
@@ -318,8 +318,9 @@ function function_check()
 	global $LANG;
 	$func_check = array();
 	$needed_functions = array(
-		'symlink', 'readlink', 'putenv', 'realpath'
+		'symlink', 'readlink', 'putenv', 'realpath', 'shell_exec'
 	);
+	$shellMsg = '<a href="https://discuz.com/docs/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98.html" target="_blank">处理方案</a>';
 
 	$all_passed = true;
 	foreach ($needed_functions as $func) {
@@ -327,6 +328,9 @@ function function_check()
 			$all_passed = false;
 			$func_check['function_' . $func] = false;
 			$LANG['function_' . $func] = "PHP函数要求启用 " . $func;
+			if($func == 'shell_exec') {
+				$LANG['function_' . $func] = "PHP函数要求启用 " . $func.$shellMsg;
+			}
 		}
 	}
 	if ($all_passed) {
@@ -334,8 +338,8 @@ function function_check()
 		$LANG['function_all'] = "PHP函数检查";
 	}
 
-	$LANG['function_openssl_pkey_new'] = 'PHP函数openssl生成密钥测试 <a href="https://discuz.chat/docs/install_faq.html#windows%E4%B8%8Bssl%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0%E4%B8%8D%E5%8F%AF%E7%94%A8" target="_blank">处理方案</a>';
-	$LANG['function_openssl_pkey_export'] = 'PHP函数openssl导出密钥测试 <a href="https://discuz.chat/docs/install_faq.html#windows%E4%B8%8Bssl%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0%E4%B8%8D%E5%8F%AF%E7%94%A8" target="_blank">处理方案</a>';
+	$LANG['function_openssl_pkey_new'] = 'PHP函数openssl生成密钥测试 <a href="https://discuz.com/docs/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98.html#windows%E4%B8%8B%E6%8F%90%E7%A4%BA-ssl-%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0%E4%B8%8D%E5%8F%AF%E7%94%A8%E5%A6%82%E4%BD%95%E8%A7%A3%E5%86%B3" target="_blank">处理方案</a>';
+	$LANG['function_openssl_pkey_export'] = 'PHP函数openssl导出密钥测试 <a href="https://discuz.com/docs/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98.html#windows%E4%B8%8B%E6%8F%90%E7%A4%BA-ssl-%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0%E4%B8%8D%E5%8F%AF%E7%94%A8%E5%A6%82%E4%BD%95%E8%A7%A3%E5%86%B3" target="_blank">处理方案</a>';
 	$pkey = FALSE;
 	function_exists('openssl_pkey_new') && $pkey = openssl_pkey_new(['private_key_bits' => 2048]);
 	if ($pkey === FALSE) {
@@ -439,7 +443,7 @@ function pre_check()
         └──<?= $SCRIPT_NAME ?>
 	</pre>
 	<p>
-		然后请阅读<a href="https://discuz.chat/docs/install.html" target="_blank">安装文档</a>，配置好Web服务器，
+		然后请阅读<a href="https://discuz.com/docs/" target="_blank">安装文档</a>，配置好Web服务器，
 		将Web服务器的根目录或运行目录指向刚刚建立的 public 目录。
 	</p>
 	<p>
@@ -752,7 +756,7 @@ function check_httpd_config()
 ?>
 	<div class="alert alert-primary" role="alert">
 		HTTP服务器配置检查
-		<p>请参考 <a href="https://discuz.chat/docs/install.html#web-%E6%9C%8D%E5%8A%A1%E5%99%A8%E9%85%8D%E7%BD%AE"> 服务器配置文档 </a> 对Web服务器进行配置。
+		<p>请参考 <a href="https://discuz.com/docs/"> 服务器配置文档 </a> 对Web服务器进行配置。
 	</div>
 	<ul class="list-group my-3">
 		<?php foreach ($url_check as $chk => $result) {
@@ -1027,6 +1031,7 @@ function init_dzq()
 	$logs .= update_admin_user($adminUsername, $adminPassword);
 	$logs .= cloud_report($app, get_server_url());
 	touch($app->storagePath() . '/install.lock');
+	make_lock_file();
 
 ?>
 	<h2>Discuz! Q <?= $version ?> 安装成功</h2>
@@ -1221,12 +1226,19 @@ function upgrade_existing_installation()
 	$versions_to_apply = array_filter($releases, function ($ver) use ($old_version, $new_version) {
 		return version_compare($ver, $old_version, ">") && version_compare($ver, $new_version, "<=");
 	}, ARRAY_FILTER_USE_KEY);
+	//按照版本号正序排
 	uksort($versions_to_apply, 'version_compare');
+	//依次执行每一个版本的命令，前提保证下载的最新的包中包含所有的命令执行类文件
+    //循环执行升级命令
 	foreach ($versions_to_apply as $ver => $actions) {
-		$logs .= '升级到 ' . $ver . "\n";
-		$logs .= apply_version_upgrade($actions);
+	    //当前老版本命令不再执行
+        if(!version_compare($ver, $old_version,'==')) {
+            $logs .= '升级到 ' . $ver . "\n";
+            $logs .= apply_version_upgrade($actions);
+        }
 	}
 	$logs .= run_db_migration();
+	//升级完成后增加锁文件
 	make_lock_file();
 ?>
 	<h2>Discuz! Q升级到 <?= $new_version ?> 成功</h2>
@@ -1552,10 +1564,12 @@ function extract_zip($zipfile, $targetfolder)
 	$zip = new ZipArchive;
 	$res = $zip->open($zipfile);
 	if ($res === true) {
-		if ($zip->extractTo($targetfolder) === FALSE) {
-			throw new Exception("无法解压缩 $zipfile 到 $targetfolder");
-		}
-		$zip->close();
+        if ($zip->extractTo($targetfolder) === FALSE) {
+            throw new Exception("无法解压缩 $zipfile 到 $targetfolder ，
+             请检查 $targetfolder 下是否有文件或目录的拥有者用户与 $zipfile 拥有者用户不同，
+             若有不同则修改该目录或文件拥有者保持与$zipfile 拥有者相同，操作完后再次点击重试");
+        }
+        $zip->close();
 	} else {
 		throw new Exception("无法打开 $zipfile");
 	}

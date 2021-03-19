@@ -18,6 +18,7 @@
 
 namespace App\Api\Serializer;
 
+use App\Common\SettingCache;
 use App\Models\Category;
 use App\Models\Thread;
 use App\Models\User;
@@ -36,10 +37,11 @@ class ForumSettingSerializer extends AbstractSerializer
 
     protected $forumField;
 
-    public function __construct(SettingsRepository $settings, ForumSettingField $forumField)
+    public function __construct(SettingsRepository $settings, ForumSettingField $forumField, SettingCache $settingcache)
     {
         $this->settings = $settings;
         $this->forumField = $forumField;
+        $this->settingcache = $settingcache;
     }
 
     /**
@@ -59,6 +61,13 @@ class ForumSettingSerializer extends AbstractSerializer
         $port = $this->request->getUri()->getPort();
         $siteUrl = $this->request->getUri()->getScheme() . '://' . $this->request->getUri()->getHost().(in_array($port, [80, 443, null]) ? '' : ':'.$port);
 
+        $site_skin = (int)$this->settingcache->getSiteSkin();
+        if($site_skin == 1){
+            $site_favicon = $favicon ?: app(UrlGenerator::class)->to('/favicon.ico');
+        }else{
+            $site_favicon = $favicon ?: app(UrlGenerator::class)->to('/favicon.png');
+        }
+
         $attributes = [
             // 站点设置
             'set_site' => [
@@ -67,10 +76,12 @@ class ForumSettingSerializer extends AbstractSerializer
                 'site_keywords' => $this->settings->get('site_keywords'),
                 'site_introduction' => $this->settings->get('site_introduction'),
                 'site_mode' => $this->settings->get('site_mode'), // pay public
+                'open_ext_fields'=>$this->settings->get('open_ext_fields'),
 //                'site_close' => (bool)$this->settings->get('site_close'),
                 'site_manage' => json_decode($this->settings->get('site_manage'), true),
+                'api_freq'    => $actor->isAdmin()?json_decode($this->settings->get('api_freq'), true):null,
                 'site_close_msg'=>$this->settings->get('site_close_msg'),
-                'site_favicon' => $favicon ?: app(UrlGenerator::class)->to('/favicon.ico'),
+                'site_favicon' => $site_favicon,
                 'site_logo' => $logo ?: '',
                 'site_header_logo' => $headerLogo ?: '',
                 'site_background_image' => $backgroundImage ?: '',
@@ -85,6 +96,15 @@ class ForumSettingSerializer extends AbstractSerializer
                 'site_master_scale' => $this->settings->get('site_master_scale'), // 站长比例
                 'site_pay_group_close' => $this->settings->get('site_pay_group_close'), // 用户组购买开关
                 'site_minimum_amount' => $this->settings->get('site_minimum_amount'),
+                'site_open_sort' => $this->settings->get('site_open_sort') == "" ? 0 : (int)$this->settings->get('site_open_sort'),
+                'site_create_thread0' => $this->settings->get('site_create_thread0') == "" ? 1 : (int)$this->settings->get('site_create_thread0'),
+                'site_create_thread1' => $this->settings->get('site_create_thread1') == "" ? 1 : (int)$this->settings->get('site_create_thread1'),
+                'site_create_thread2' => $this->settings->get('site_create_thread2') == "" ? 1 : (int)$this->settings->get('site_create_thread2'),
+                'site_create_thread3' => $this->settings->get('site_create_thread3') == "" ? 1 : (int)$this->settings->get('site_create_thread3'),
+                'site_create_thread4' => $this->settings->get('site_create_thread4') == "" ? 1 : (int)$this->settings->get('site_create_thread4'),
+                'site_create_thread5' => $this->settings->get('site_create_thread5') == "" ? 1 : (int)$this->settings->get('site_create_thread5'),
+                'site_create_thread6' => $this->settings->get('site_create_thread6') == "" ? 1 : (int)$this->settings->get('site_create_thread6'),
+                'site_skin' => $site_skin
             ],
 
             // 注册设置
@@ -164,6 +184,15 @@ class ForumSettingSerializer extends AbstractSerializer
                 'can_create_thread_audio' => $actor->can('createThread.' . Thread::TYPE_OF_AUDIO),          // 发布语音
                 'can_create_thread_question' => $actor->can('createThread.' . Thread::TYPE_OF_QUESTION),    // 发布问答
                 'can_create_thread_goods' => $actor->can('createThread.' . Thread::TYPE_OF_GOODS),          // 发布商品
+                'can_create_thread_position'            => $actor->can('createThread.' . Thread::TYPE_OF_TEXT . '.position'),      // 发布文字位置
+                'can_create_thread_long_position'       => $actor->can('createThread.' . Thread::TYPE_OF_LONG . '.position'),      // 发布长文位置
+                'can_create_thread_video_position'      => $actor->can('createThread.' . Thread::TYPE_OF_VIDEO . '.position'),     // 发布视频位置
+                'can_create_thread_image_position'      => $actor->can('createThread.' . Thread::TYPE_OF_IMAGE . '.position'),     // 发布图片位置
+                'can_create_thread_audio_position'      => $actor->can('createThread.' . Thread::TYPE_OF_AUDIO . '.position'),     // 发布语音位置
+                'can_create_thread_question_position'   => $actor->can('createThread.' . Thread::TYPE_OF_QUESTION . '.position'),  // 发布问答位置
+                'can_create_thread_goods_position'      => $actor->can('createThread.' . Thread::TYPE_OF_GOODS . '.position'),     // 发布商品位置
+                'can_create_thread_red_packet'          => $actor->can('createThread.' . Thread::TYPE_OF_TEXT . '.redPacket'),     // 发文字帖红包
+                'can_create_thread_long_red_packet'     => $actor->can('createThread.' . Thread::TYPE_OF_LONG . '.redPacket'),     // 发长文帖红包
 
                 // 至少在一个分类下有发布权限
                 'can_create_thread_in_category' => (bool) Category::getIdsWhereCan($actor, 'createThread'),
@@ -249,7 +278,11 @@ class ForumSettingSerializer extends AbstractSerializer
 
                 // UCenter设置
                 $attributes['ucenter'] += $this->forumField->getUCenterSettings();
+            } else {
+                $attributes['qcloud']['qcloud_vod_token'] = "";
             }
+        } else {
+            $attributes['qcloud']['qcloud_vod_token'] = "";
         }
 
         return $attributes + Arr::except($model, 'id');

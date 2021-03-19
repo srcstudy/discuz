@@ -18,7 +18,12 @@
 
 namespace App\Api\Serializer;
 
+use App\Common\CacheKey;
+use App\Common\Statistics;
+use App\Models\User;
 use Discuz\Api\Serializer\AbstractSerializer;
+use Discuz\Common\PubEnum;
+use Discuz\Common\Utils;
 
 class TokenSerializer extends AbstractSerializer
 {
@@ -49,9 +54,60 @@ class TokenSerializer extends AbstractSerializer
             'expires_in' => $model->expires_in,
             'access_token' => $model->access_token,
             'refresh_token' => $model->refresh_token,
+            'status'=>$this->getUserStatus()
         ];
-
+        $userId = $this->getId($model);
+        $cache = app('cache');
+        $cacheKey = CacheKey::NEW_USER_LOGIN . $userId;
+        $data = $cache->get($cacheKey);
+        if (!empty($data)) {
+            $build['new_user'] = true;
+            $cache->put($cacheKey,$data,10);
+        }
+        if($build['status'] == User::STATUS_NORMAL){
+            $this->localStatistics();
+        }
         return $build;
+    }
+
+    private function localStatistics()
+    {
+        $platform = Utils::requestFrom();
+        $t = date('Y-m-d');
+        $keyPc = 'login_pc_count:' . $t;
+        $keyH5 = 'login_h5_count:' . $t;
+        $keyMp = 'login_mp_count:' . $t;
+        switch ($platform) {
+            case PubEnum::PC:
+                $pcNum = Statistics::get($keyPc);
+                !$pcNum && $pcNum = 0;
+                Statistics::set($keyPc, ++$pcNum);
+                break;
+            case PubEnum::H5:
+                $h5Num = Statistics::get($keyH5);
+                !$h5Num && $h5Num = 0;
+                Statistics::set($keyH5, ++$h5Num);
+                break;
+            case PubEnum::MinProgram:
+                $mpNum = Statistics::get($keyMp);
+                !$mpNum && $mpNum = 0;
+                Statistics::set($keyMp, ++$mpNum);
+                break;
+            default:
+                break;
+        }
+    }
+
+    public function getUserStatus()
+    {
+        $user = self::getUser();
+        $status = User::STATUS_NORMAL;
+        if (!empty($user)) {
+            if (isset($user['status'])) {
+                $status = $user['status'];
+            }
+        }
+        return $status;
     }
 
     public function getId($model)

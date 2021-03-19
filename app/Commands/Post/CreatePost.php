@@ -24,9 +24,11 @@ use App\Events\Post\Saved;
 use App\Events\Post\Saving;
 use App\Models\Post;
 use App\Models\PostMod;
+use App\Models\Thread;
 use App\Models\User;
 use App\Repositories\ThreadRepository;
 use App\Validators\PostValidator;
+use Carbon\Carbon;
 use Discuz\Auth\AssertPermissionTrait;
 use Discuz\Auth\Exception\PermissionDeniedException;
 use Discuz\Foundation\EventsDispatchTrait;
@@ -42,6 +44,7 @@ class CreatePost
     use AssertPermissionTrait;
     use EventsDispatchTrait;
 
+    const LIMIT_RED_PACKET_TIME = 30;
     /**
      * The id of the thread.
      *
@@ -62,6 +65,20 @@ class CreatePost
      * @var int
      */
     public $replyUserId;
+
+    /**
+     * The id of the post waiting to be replied.
+     *
+     * @var int
+     */
+    public $commentPostId;
+
+    /**
+     * The id of the post waiting to be replied.
+     *
+     * @var int
+     */
+    public $commentUserId;
 
     /**
      * The user performing the action.
@@ -92,20 +109,33 @@ class CreatePost
     public $port;
 
     /**
+     * @var Validator
+     */
+    protected $validator;
+
+    /**
+     * @var null
+     */
+    protected $isFirst;
+
+    /**
      * @param int $threadId
      * @param User $actor
      * @param array $data
      * @param string $ip
      * @param int $port
+     * @param null $isFirst
      */
-    public function __construct($threadId, User $actor, array $data, $ip, $port)
+    public function __construct($threadId, User $actor, array $data, $ip, $port, $isFirst = null)
     {
         $this->threadId = $threadId;
         $this->replyPostId = Arr::get($data, 'attributes.replyId', null);
+        $this->commentPostId = Arr::get($data, 'attributes.commentPostId', null);
         $this->actor = $actor;
         $this->data = $data;
         $this->ip = $ip;
         $this->port = $port;
+        $this->isFirst = $isFirst;
     }
 
     /**
@@ -122,15 +152,45 @@ class CreatePost
      */
     public function handle(Dispatcher $events, ThreadRepository $threads, PostValidator $validator, Censor $censor, Post $post)
     {
+        $cache = app('cache');
         $this->events = $events;
 
         $thread = $threads->findOrFail($this->threadId);
 
-        $isFirst = empty($thread->post_count);
+        if($thread->is_red_packet != Thread::NOT_HAVE_RED_PACKET && (Carbon::now()->timestamp - $thread->created_at->timestamp > 30)){
+            $cacheKey = 'thread_red_packet_'.md5($this->actor->id);
+            $red_cache = $cache->get($cacheKey);
+            if($red_cache){
+                $cache->put($cacheKey, true, self::LIMIT_RED_PACKET_TIME);
+                throw new Exception(trans('user.do_frequent'));
+            }
+        }
 
-        if (! $isFirst) {
+        $isFirst = is_null($this->isFirst) ? empty($thread->post_count):$this->isFirst;
+
+        if ($isFirst && ($firstPost = $thread->firstPost)) {
+            $post = $firstPost;
+        }
+
+        if (!$isFirst) {
             // 非首帖，检查是否有权回复
             $this->assertCan($this->actor, 'reply', $thread);
+
+            // 回复中回复，确保回复在同一主题下
+            if (! empty($this->commentPostId)) {
+                /** @var Post $comment */
+                $comment = $post->newQuery()
+                    ->where('id', $this->commentPostId)
+                    ->where('thread_id', $thread->id)
+                    ->first(['user_id', 'reply_post_id']);
+
+                $this->commentUserId = $comment->user_id;
+                $this->replyPostId = $comment->reply_post_id;
+
+                if (! $this->commentUserId) {
+                    throw new ModelNotFoundException;
+                }
+            }
 
             // 回复他人
             if (! empty($this->replyPostId)) {
@@ -148,17 +208,27 @@ class CreatePost
 
         $post = $post->reply(
             $thread->id,
-            trim($censor->checkText(Arr::get($this->data, 'attributes.content'))),
+            trim(Arr::get($this->data, 'attributes.content')),
             $this->actor->id,
             $this->ip,
             $this->port,
             $this->replyPostId,
             $this->replyUserId,
+            $this->commentPostId,
+            $this->commentUserId,
             $isFirst,
-            (bool) Arr::get($this->data, 'attributes.isComment')
+            (bool) Arr::get($this->data, 'attributes.isComment'),
+            $post
         );
 
-        // 存在审核敏感词时，将回复内容放入待审核
+        $post->content = $censor->checkText($post->content);
+
+        $content = $post->content;
+
+        if(mb_strlen($post->content)>49999){
+            throw new \Exception('字数超出限制');
+        }
+        // 存在审核敏感词时，将回复放入待审核
         if ($censor->isMod) {
             $post->is_approved = Post::UNAPPROVED;
         } else {
@@ -171,16 +241,26 @@ class CreatePost
             new Saving($post, $this->actor, $this->data)
         );
 
-        $validator->valid($post->getAttributes());
+        if (!$isDraft = Arr::get($this->data, 'attributes.is_draft')) {
+            $validator->valid($post->getAttributes());
+        }
 
         $post->save();
 
-        // 记录触发的审核词
-        if ($post->is_approved === Post::UNAPPROVED && $censor->wordMod) {
-            $stopWords = new PostMod;
-            $stopWords->stop_word = implode(',', array_unique($censor->wordMod));
+        //这里判断是否为红包贴，如果是红包贴则限制用户回帖时间
+        if($thread->is_red_packet != Thread::NOT_HAVE_RED_PACKET && (Carbon::now()->timestamp - $thread->created_at->timestamp > 30)){
+            $cacheKey = 'thread_red_packet_'.md5($this->actor->id);
+            $cache->put($cacheKey, true, self::LIMIT_RED_PACKET_TIME);
+        }
 
-            $post->stopWords()->save($stopWords);
+        // 记录触发的审核词
+        if (!$isDraft = Arr::get($this->data, 'attributes.is_draft')) {
+            if ($post->is_approved === Post::UNAPPROVED && $censor->wordMod) {
+                $stopWords = new PostMod;
+                $stopWords->stop_word = implode(',', array_unique($censor->wordMod));
+
+                $post->stopWords()->save($stopWords);
+            }
         }
 
         $post->raise(new Saved($post, $this->actor, $this->data));
@@ -190,6 +270,8 @@ class CreatePost
         $this->dispatchEventsFor($post, $this->actor);
         // });
 
+        $post->rewards = floatval(sprintf('%.2f', $post->getPostReward()));
+        $post->content != $content && $post->content = $content;
         return $post;
     }
 }

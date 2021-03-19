@@ -22,10 +22,10 @@ use App\Common\CacheKey;
 use App\Events\Post\Hidden;
 use App\Events\Post\Restored;
 use App\Events\Post\Revised;
+use App\Models\UserWalletLog;
 use App\Formatter\Formatter;
 use Carbon\Carbon;
 use DateTime;
-use Discuz\Common\Utils;
 use Discuz\Database\ScopeVisibilityTrait;
 use Discuz\Foundation\EventGeneratorTrait;
 use Discuz\SpecialChar\SpecialCharServer;
@@ -43,6 +43,8 @@ use Illuminate\Support\Str;
  * @property int $thread_id
  * @property int $reply_post_id
  * @property int $reply_user_id
+ * @property int $comment_post_id
+ * @property int $comment_user_id
  * @property string $summary
  * @property string $summary_text
  * @property string $content
@@ -62,10 +64,12 @@ use Illuminate\Support\Str;
  * @property Thread $thread
  * @property User $user
  * @property User $replyUser
+ * @property User $commentUser
  * @property User $deletedUser
  * @property PostMod $stopWords
- * @property Post replyPost
- * @property string parsedContent
+ * @property Post $replyPost
+ * @property Post $commentPost
+ * @property string $parsedContent
  * @package App\Models
  */
 class Post extends Model
@@ -146,8 +150,11 @@ class Post extends Model
     public function getSummaryAttribute()
     {
         $content = Str::of($this->content ?: '');
-
         if ($content->length() > self::SUMMARY_LENGTH) {
+            $subContent = $content->substr(0, self::SUMMARY_LENGTH);
+            if(stristr($subContent,'http')){
+                $content = Str::of(strip_tags($this->formatContent()));
+            }
             $content = static::$formatter->parse(
                 $content->substr(0, self::SUMMARY_LENGTH)->finish(self::SUMMARY_END_WITH)
             );
@@ -166,13 +173,16 @@ class Post extends Model
      */
     public function getSummaryTextAttribute()
     {
-        $content = Str::of(strip_tags($this->formatContent()));
+       $content = Str::of($this->content ?: '');
 
         if ($content->length() > self::SUMMARY_LENGTH) {
-            $content = $content->substr(0, self::SUMMARY_LENGTH)->finish(self::SUMMARY_END_WITH);
-        }
 
-        return $content->__toString();
+            $content = static::$formatter->parse(
+                $content->substr(0, self::SUMMARY_LENGTH)->finish(self::SUMMARY_END_WITH)
+            );
+            $content = static::$formatter->render($content);
+        }
+        return str_replace('<br>', '', $content);
     }
 
     /**
@@ -237,7 +247,7 @@ class Post extends Model
         if (empty($this->attributes['content'])) {
             return $this->attributes['content'];
         }
-
+        empty(static::$formatter) && Post::setFormatter(app()->make(Formatter::class));
         return static::$formatter->render($this->attributes['content']);
     }
 
@@ -257,33 +267,28 @@ class Post extends Model
             'first_content' => '',
         ];
 
+        $this->content = $substr ? Str::of($this->content)->substr(0, $substr) : $this->content;
+        if ($parse) {
+            // 原文
+            $content = $this->content;
+        } else {
+            $content = $this->formatContent();
+        }
+
         /**
          * 判断是否是楼中楼的回复
          */
         if ($this->reply_post_id) {
-            $this->content = $substr ? Str::of($this->content)->substr(0, $substr) : $this->content;
-            if ($parse) {
-                // 原文
-                $content = $this->content;
-            } else {
-                $content = $this->formatContent();
-            }
+            // Do something
+            // TODO comment_post_id 评论回复 id
         } else {
             /**
              * 判断长文点赞通知内容为标题
              */
             if ($this->thread->type === Thread::TYPE_OF_LONG) {
-                $content = $this->thread->getContentByType(self::NOTICE_LENGTH, $parse);
+                $firstContent = $this->thread->getContentByType(self::NOTICE_LENGTH, $parse);
             } else {
-                $this->content = $substr ? Str::of($this->content)->substr(0, $substr) : $this->content;
-                if ($parse) {
-                    // 原文
-                    $content = $this->content;
-                } else {
-                    $content = $this->formatContent();
-                }
-
-                // 如果是首贴 firstContent === content 内容一样
+                // 如果是首帖 firstContent === content 内容一样
                 if ($this->is_first) {
                     $firstContent = $content;
                 } else {
@@ -308,12 +313,15 @@ class Post extends Model
      * @param int $port
      * @param int $replyPostId
      * @param int $replyUserId
+     * @param int $commentPostId
+     * @param int $commentUserId
      * @param int $isFirst
      * @param int $isComment
      * @return static
      */
-    public static function reply($threadId, $content, $userId, $ip, $port, $replyPostId, $replyUserId, $isFirst, $isComment)
+    public static function reply( $threadId, $content, $userId, $ip, $port, $replyPostId, $replyUserId, $commentPostId, $commentUserId, $isFirst, $isComment, Post $post=null)
     {
+        if (!$post->id)
         $post = new static;
 
         $post->created_at = Carbon::now();
@@ -323,6 +331,8 @@ class Post extends Model
         $post->port = $port;
         $post->reply_post_id = $replyPostId;
         $post->reply_user_id = $replyUserId;
+        $post->comment_post_id = $commentPostId;
+        $post->comment_user_id = $commentUserId;
         $post->is_first = $isFirst;
         $post->is_comment = $isComment;
 
@@ -450,6 +460,16 @@ class Post extends Model
     }
 
     /**
+     * Define the relationship with the post's comment user.
+     *
+     * @return BelongsTo
+     */
+    public function commentUser()
+    {
+        return $this->belongsTo(User::class, 'comment_user_id');
+    }
+
+    /**
      * Define the relationship with the post's content post.
      *
      * @return BelongsTo
@@ -457,6 +477,16 @@ class Post extends Model
     public function replyPost()
     {
         return $this->belongsTo(Post::class, 'reply_post_id');
+    }
+
+    /**
+     * Define the relationship with the post's content post.
+     *
+     * @return BelongsTo
+     */
+    public function commentPost()
+    {
+        return $this->belongsTo(Post::class, 'comment_post_id');
     }
 
     /**
@@ -544,6 +574,7 @@ class Post extends Model
     {
         return $this->hasOne(PostGoods::class);
     }
+
     /**
      * Set the user for which the state relationship should be loaded.
      *
@@ -573,16 +604,19 @@ class Post extends Model
     {
         static::$formatter = $formatter;
     }
+
     public function save(array $options = [])
     {
         $this->removePostCache();
         return parent::save($options); // TODO: Change the autogenerated stub
     }
+
     public function delete()
     {
         $this->removePostCache();
         return parent::delete(); // TODO: Change the autogenerated stub
     }
+
     public function update(array $attributes = [], array $options = [])
     {
         $this->removePostCache();
@@ -595,7 +629,21 @@ class Post extends Model
         $cacheKey0 = CacheKey::POST_RESOURCE_BY_ID . '0' . $threadId;
         $cacheKey1 = CacheKey::POST_RESOURCE_BY_ID . '1' . $threadId;
         $cache = app('cache');
-        return $cache->delete($cacheKey0) || $cache->delete($cacheKey1);
+        $f1 = $cache->forget($cacheKey0);
+        $f2 = $cache->forget($cacheKey1);
+        return $f1 || $f2;
     }
 
+    public function getPostReward()
+    {
+        $this->removePostCache();
+        $thread = Thread::query()->where('id', $this->thread_id)->first();
+        $this->rewards = 0;
+        if($thread->type == Thread::TYPE_OF_QUESTION){
+            $this->rewards = UserWalletLog::query()
+                ->where(['post_id' => $this->id, 'thread_id' => $this->thread_id])
+                ->sum('change_available_amount');
+        }
+        return $this->rewards;
+    }
 }

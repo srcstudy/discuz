@@ -28,4 +28,14 @@ class CacheKey
     public const THREAD_RESOURCE_BY_ID = 'thread_resource_by_id_';
 
     public const POST_RESOURCE_BY_ID = 'post_resource_by_id_';
+
+    //记录用户是否新注册用户
+    public const NEW_USER_LOGIN = 'new_user_login_';
+
+    //符合智能排序条件的id数组
+    public const LIST_SEQUENCE_THREAD_INDEX = 'list_sequences_thread_index';
+
+    public const LIST_SEQUENCE_THREAD_INDEX_KEYS = 'list_sequences_thread_index_keys';
+
+    public const API_FREQUENCE = 'api_frequence';
 }

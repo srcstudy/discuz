@@ -56,6 +56,18 @@
           <el-radio v-model="isReal" label="yes">是</el-radio>
           <el-radio v-model="isReal" label="no">否</el-radio>
         </Card>
+
+        <Card header="实名认证姓名：">
+          <CardRow>
+            <el-input v-model="realname"></el-input>
+          </CardRow>
+        </Card>
+
+        <Card header="实名认证身份证号：">
+          <CardRow>
+            <el-input v-model="identity"></el-input>
+          </CardRow>
+        </Card>
       </div>
     </el-collapse-transition>
 

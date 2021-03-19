@@ -44,6 +44,7 @@ class UpdatePostController extends AbstractResourceController
         'lastThreeComments',
         'lastThreeComments.user',
         'lastThreeComments.replyUser',
+        'lastThreeComments.commentUser',
     ];
 
     /**
@@ -98,6 +99,8 @@ class UpdatePostController extends AbstractResourceController
                 ->limit(3)
                 ->get()
         );
+
+        $post->rewards = floatval(sprintf('%.2f', $post->getPostReward()));
 
         return $post->loadMissing($this->extractInclude($request));
     }
